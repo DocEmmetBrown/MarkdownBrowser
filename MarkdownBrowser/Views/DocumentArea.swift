@@ -8,14 +8,14 @@ struct DocumentArea: View {
             if let document = workspace.document {
                 DocumentBanners(document: document)
             }
-            if workspace.deniedResourceAccess, let selection = workspace.selection {
+            if let denied = workspace.deniedResource {
                 Banner(
                     systemImage: "lock",
-                    message: "Some images can't be shown because MarkdownBrowser doesn't have access to their folder."
+                    message: "“\(denied.lastPathComponent)” can't be shown because MarkdownBrowser doesn't have access to its folder."
                 ) {
                     Button("Grant Access…") {
                         Task {
-                            if let folder = await workspace.delegate?.workspace(workspace, requestAccessTo: selection) {
+                            if let folder = await workspace.delegate?.workspace(workspace, requestAccessTo: denied) {
                                 workspace.grantAccess(to: folder)
                             }
                         }

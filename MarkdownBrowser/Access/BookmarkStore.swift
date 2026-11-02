@@ -11,7 +11,8 @@ nonisolated struct RecentItem: Codable, Identifiable, Hashable, Sendable {
     var name: String { (path as NSString).lastPathComponent }
 }
 
-/// Persists security-scoped bookmarks for recent files/folders and for extra folders granted to single files.
+/// Persists security-scoped bookmarks for recent files/folders. Folder grants are kept
+/// in memory only so a one-time consent can't silently widen access in future sessions.
 @Observable
 final class BookmarkStore {
     static let shared = BookmarkStore()
@@ -21,13 +22,13 @@ final class BookmarkStore {
 
     private let defaults: UserDefaults
     private let recentsKey = "recentItems"
-    private let grantsKey = "grantedFolders"
     private let maxRecents = 15
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         recents = Self.decode(defaults.data(forKey: recentsKey))
-        grants = Self.decode(defaults.data(forKey: grantsKey))
+        // Drop grants persisted by versions that stored them permanently.
+        defaults.removeObject(forKey: "grantedFolders")
     }
 
     func noteOpened(_ url: URL, isDirectory: Bool) {
@@ -57,14 +58,14 @@ final class BookmarkStore {
         return url
     }
 
+    /// Grants scoped access to `folder` for the rest of this session only.
     func addGrant(_ folder: URL) {
         guard let bookmark = try? Self.makeBookmark(folder) else { return }
         grants.removeAll { $0.path == folder.path }
         grants.append(RecentItem(path: folder.path, isDirectory: true, bookmark: bookmark, lastOpened: .now))
-        persist()
     }
 
-    /// Previously granted folders that contain `url`, resolved and ready for scoped access.
+    /// Folders granted this session that contain `url`, resolved and ready for scoped access.
     func grantedFolders(containing url: URL) -> [URL] {
         grants
             .filter { PathPolicy.isWithin(url, roots: [URL(fileURLWithPath: $0.path)]) }
@@ -73,7 +74,6 @@ final class BookmarkStore {
 
     private func persist() {
         defaults.set(try? JSONEncoder().encode(recents), forKey: recentsKey)
-        defaults.set(try? JSONEncoder().encode(grants), forKey: grantsKey)
     }
 
     private static func decode(_ data: Data?) -> [RecentItem] {
