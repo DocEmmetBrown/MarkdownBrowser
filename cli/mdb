@@ -1,0 +1,49 @@
+#!/bin/zsh
+# Command-line launcher, shipped in MarkdownBrowser.app/Contents/SharedSupport/bin.
+# Install: ln -s "/Applications/MarkdownBrowser.app/Contents/SharedSupport/bin/mdb" /usr/local/bin/mdb
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: mdb [path ...]
+
+Opens files or folders in MarkdownBrowser. With no path, opens the current directory.
+
+Options:
+  -h, --help    Show this help
+EOF
+}
+
+paths=()
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --) ;;
+    -*) echo "mdb: unknown option: $arg" >&2; usage >&2; exit 2 ;;
+    *) paths+=("$arg") ;;
+  esac
+done
+(( ${#paths} )) || paths=("$PWD")
+
+# Resolve symlinks so the script finds its bundle even when linked from /usr/local/bin.
+app="${${${0:A}:h}:h:h:h}"
+if [[ "$app" != *.app || ! -d "$app" ]]; then
+  echo "mdb: can't locate MarkdownBrowser.app (resolved to '$app')" >&2
+  exit 1
+fi
+
+targets=()
+missing=0
+for p in "${paths[@]}"; do
+  if [[ -e "$p" ]]; then
+    targets+=("${p:a}")
+  else
+    echo "mdb: $p: No such file or directory" >&2
+    missing=1
+  fi
+done
+
+# Targets are absolute, so they can't be mistaken for `open` options.
+(( ${#targets} )) && open -a "$app" "${targets[@]}"
+exit $missing
