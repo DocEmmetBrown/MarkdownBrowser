@@ -38,7 +38,8 @@ final class Workspace {
     var expanded: Set<URL> = []
     var sidebarMode: SidebarMode = .files
     var isSidebarVisible: Bool
-    var deniedResourceAccess = false
+    /// A resource the web view was denied access to; drives the "Grant Access…" banner.
+    var deniedResource: URL?
     var openError: String?
 
     @ObservationIgnored let editor = EditorHost()
@@ -90,7 +91,9 @@ final class Workspace {
 
     private func configureEditor() {
         editor.schemeHandler.isAllowed = { [weak self] url in self?.canAccess(url) ?? false }
-        editor.schemeHandler.onDenied = { [weak self] _ in self?.deniedResourceAccess = true }
+        editor.schemeHandler.onDenied = { [weak self] url in
+            Task { @MainActor [weak self] in self?.deniedResource = url }
+        }
         editor.onDirtyChange = { [weak self] docId, dirty in
             guard let document = self?.document, document.id == docId else { return }
             document.isDirty = dirty
@@ -187,7 +190,7 @@ final class Workspace {
         selection = url
         selectionKind = kind
         openError = nil
-        deniedResourceAccess = false
+        deniedResource = nil
         revealInSidebar(url, expandingTarget: false)
 
         if let newDocument {
@@ -343,7 +346,7 @@ final class Workspace {
         scopes.append(SecurityScope(url: folder))
         accessRoots.append(folder)
         BookmarkStore.shared.addGrant(folder)
-        deniedResourceAccess = false
+        deniedResource = nil
         editor.refreshMedia()
     }
 

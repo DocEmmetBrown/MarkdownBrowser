@@ -206,7 +206,7 @@ extension WorkspaceWindowController: WorkspaceDelegate {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = url.deletingLastPathComponent()
-        panel.message = "MarkdownBrowser needs permission to open “\(url.lastPathComponent)”. Choose a folder that contains it."
+        panel.message = "MarkdownBrowser needs permission to access “\(url.lastPathComponent)”. Choose a folder that contains it."
         panel.prompt = "Grant Access"
         let response: NSApplication.ModalResponse
         if let window, window.attachedSheet == nil {
