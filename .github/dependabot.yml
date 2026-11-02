@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: daily
+    # Let a release bake for 2 days before opening a PR, so freshly-published
+    # malicious or broken versions are less likely to be picked up automatically.
+    cooldown:
+      default-days: 2
+    open-pull-requests-limit: 10
+    # Related packages are grouped so a single green CI run validates a coherent set;
+    # rendering-critical packages (katex, mermaid, github-markdown-css) stay in
+    # individual PRs so a regression can be attributed to one upgrade.
+    groups:
+      codemirror:
+        patterns:
+          - "@codemirror/*"
+          - "@lezer/*"
+      markdown-pipeline:
+        patterns:
+          - "remark-*"
+          - "rehype-*"
+          - "unified"
+          - "unist-util-*"
+          - "hast-util-*"
+      tooling:
+        patterns:
+          - "vite"
+          - "vitest"
+          - "typescript"
+          - "jsdom"
+          - "@types/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+    # Same 2-day bake-in as npm: don't pick up a freshly-published action version
+    # the moment it lands.
+    cooldown:
+      default-days: 2

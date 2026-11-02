@@ -1,0 +1,106 @@
+name: dependabot-merge
+
+# This repo is private on a free plan, so GitHub's native auto-merge (which needs
+# branch protection) is unavailable. Instead this workflow merges qualifying
+# Dependabot PRs itself — but only after the web CI's `verify` check has passed.
+#
+# Security model:
+#  - Never checks out or executes PR code; only reads PR metadata and check results
+#    via the API, then merges.
+#  - Only acts on PRs authored by dependabot[bot] targeting main.
+#  - Major version bumps and review-gated packages are never merged automatically.
+#
+# Triggers: when the `verify` check_run completes (the common case), plus an hourly
+# poll as a fallback in case the check_run fired before this workflow was registered.
+on:
+  check_run:
+    types: [completed]
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  pull-requests: write
+  contents: write
+  checks: read
+
+concurrency:
+  group: dependabot-merge
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    name: Merge qualifying Dependabot PRs
+    runs-on: ubuntu-latest
+    if: github.event_name != 'check_run' || github.event.check_run.name == 'verify'
+    steps:
+      - name: Merge eligible Dependabot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+
+          # Highest-blast-radius packages: never auto-merge, even minor/patch.
+          GATED="mermaid katex github-markdown-css rehype-sanitize hast-util-sanitize"
+
+          is_gated() {
+            local name got
+            for name in $GATED; do
+              for got in $1; do
+                [ "$got" = "$name" ] && { echo "$name"; return 0; }
+              done
+            done
+            return 1
+          }
+
+          prs=$(gh pr list --repo "$REPO" --author "dependabot[bot]" --base main \
+            --state open --json number,title,headRefOid --jq '.[] | @base64')
+
+          if [ -z "$prs" ]; then echo "No open Dependabot PRs."; exit 0; fi
+
+          for row in $prs; do
+            pr=$(echo "$row" | base64 -d)
+            number=$(echo "$pr" | jq -r .number)
+            title=$(echo "$pr" | jq -r .title)
+            sha=$(echo "$pr" | jq -r .headRefOid)
+            echo "-- PR #$number: $title"
+
+            # 1. No conflicts, still open.
+            mergeable=$(gh pr view "$number" --repo "$REPO" --json mergeable --jq .mergeable)
+            if [ "$mergeable" != "MERGEABLE" ]; then
+              echo "   skip: not mergeable ($mergeable)"; continue
+            fi
+
+            # 2. Skip major version bumps.
+            from_major=$(echo "$title" | grep -oiE 'from [0-9]+\.' | grep -oE '[0-9]+' | head -1 || true)
+            to_major=$(echo "$title" | grep -oiE 'to [0-9]+\.' | grep -oE '[0-9]+' | head -1 || true)
+            if [ -n "$from_major" ] && [ -n "$to_major" ] && [ "$to_major" -gt "$from_major" ]; then
+              echo "   skip: major bump ($from_major -> $to_major)"; continue
+            fi
+
+            # 3. Skip PRs touching a review-gated package.
+            changed=$(gh pr diff "$number" --repo "$REPO" --name-only)
+            if echo "$changed" | grep -qE '(^|/)package(-lock)?\.json$'; then
+              touched=$(gh pr diff "$number" --repo "$REPO" \
+                | grep -oE '"[a-z@][^"]*"' | tr -d '"' | sort -u | tr '\n' ' ')
+              hit=$(is_gated "$touched")
+              if [ -n "$hit" ]; then
+                echo "   skip: touches review-gated package: $hit"; continue
+              fi
+            fi
+
+            # 4. The `verify` check on the PR head must have passed.
+            conclusion=$(gh api "repos/$REPO/commits/$sha/check-runs" \
+              --jq '[.check_runs[] | select(.name=="verify")] | .[0] // empty | .conclusion')
+            if [ "$conclusion" != "success" ]; then
+              echo "   skip: verify not green (conclusion: ${conclusion:-none})"; continue
+            fi
+
+            echo "   OK: eligible, merging"
+            if gh pr merge "$number" --repo "$REPO" --squash --delete-branch; then
+              echo "   merged #$number"
+            else
+              echo "   merge failed (will retry on next poll)"
+            fi
+          done
