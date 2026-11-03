@@ -87,7 +87,6 @@ The app is sandboxed (App Store-ready), so it can't install the link for you.
 - Tables, diagrams and HTML inside blockquotes are shown as source.
 - If the editor's web process crashes, edits since the last save are lost.
 - The find bar uses JavaScript regex syntax; Find in Files uses ICU (`NSRegularExpression`) and matches within a single line.
-- No app icon yet.
 
 ## Project layout
 
