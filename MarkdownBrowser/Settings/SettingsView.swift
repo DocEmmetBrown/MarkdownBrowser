@@ -14,9 +14,17 @@ struct SettingsView: View {
 
 private struct GeneralSettingsView: View {
     @AppStorage(AppSettings.autosaveOnFocusLossKey) private var autosaveOnFocusLoss = true
+    @AppStorage(AppSettings.wrapLongLinesKey) private var wrapLongLines = true
 
     var body: some View {
         Form {
+            Section("Editing") {
+                Toggle("Wrap long lines", isOn: $wrapLongLines)
+                Text("Wraps lines longer than the window instead of scrolling sideways, in rendered Markdown, Markdown source and other text files. Also in Edit › Wrap Long Lines.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section("Saving") {
                 Toggle("Save automatically when focus is lost", isOn: $autosaveOnFocusLoss)
                 Text(

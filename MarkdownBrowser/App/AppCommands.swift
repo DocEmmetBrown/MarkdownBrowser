@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AppCommands: Commands {
+    @AppStorage(AppSettings.wrapLongLinesKey) private var wrapLongLines = true
     private var windows: WindowManager { .shared }
 
     var body: some Commands {
@@ -50,6 +51,8 @@ struct AppCommands: Commands {
                 Button("Find in Files…") { windows.activeController?.findInFiles() }
                     .keyboardShortcut("f", modifiers: [.command, .shift])
             }
+            Divider()
+            Toggle("Wrap Long Lines", isOn: $wrapLongLines)
         }
 
         CommandMenu("Go") {
