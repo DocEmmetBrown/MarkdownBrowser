@@ -46,10 +46,10 @@ Debug builds are signed ad hoc. Set your development team in `project.yml` befor
 
 ## Command-line tool
 
-The app bundle ships an `mdb` launcher. Link it somewhere on your `PATH`:
+The app bundle ships an `mdb` launcher. To install it, choose **MarkdownBrowser › Install Command Line Tool…** (also offered on first launch and in Settings › General) and pick a folder on your `PATH`, such as `/opt/homebrew/bin` or `~/.local/bin`. The app is sandboxed, so it can only write to a folder you pick; if that folder belongs to root (like `/usr/local/bin` on a fresh Mac), it offers a `sudo` command to copy instead. To link it by hand:
 
 ```sh
-ln -s "/Applications/MarkdownBrowser.app/Contents/SharedSupport/bin/mdb" /usr/local/bin/mdb
+sudo ln -sf "/Applications/MarkdownBrowser.app/Contents/SharedSupport/bin/mdb" /usr/local/bin/mdb
 ```
 
 ```sh
@@ -57,7 +57,7 @@ mdb                 # open the current directory
 mdb README.md docs  # open files or folders
 ```
 
-The app is sandboxed (App Store-ready), so it can't install the link for you.
+The link points into the app, so reinstall it if you move the app.
 
 ## Keyboard shortcuts
 
@@ -77,7 +77,7 @@ The app is sandboxed (App Store-ready), so it can't install the link for you.
 
 ## Settings
 
-- **General**: autosave when focus is lost (on by default). When off, you're asked before unsaved changes are discarded.
+- **General**: autosave when focus is lost (on by default). When off, you're asked before unsaved changes are discarded. Install the `mdb` command.
 - **Appearance**: Automatic (follows macOS), Light, or Dark.
 
 ## Known limitations

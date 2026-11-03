@@ -4,6 +4,10 @@ struct AppCommands: Commands {
     private var windows: WindowManager { .shared }
 
     var body: some Commands {
+        CommandGroup(after: .appSettings) {
+            Button("Install Command Line Tool…") { CommandLineToolInstaller.install() }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Window") { windows.newWindow() }
                 .keyboardShortcut("n")

@@ -26,6 +26,15 @@ private struct GeneralSettingsView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
+            Section("Command Line") {
+                LabeledContent("mdb command") {
+                    Button("Install…") { CommandLineToolInstaller.install() }
+                }
+                Text("Adds mdb to a folder on your PATH so “mdb .” opens the current folder from Terminal.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
