@@ -26,9 +26,11 @@ extension URL {
 final class Workspace {
     let rootURL: URL
     let isFolder: Bool
-    let root: FileNode?
+    let tree: FileTree?
     let search: SearchModel
     let find = FindBarModel()
+
+    var root: FileNode? { tree?.root }
 
     private(set) var selection: URL?
     private(set) var selectionKind: FileKind = .other
@@ -46,38 +48,27 @@ final class Workspace {
     @ObservationIgnored weak var delegate: WorkspaceDelegate?
     @ObservationIgnored private var scopes: [SecurityScope] = []
     @ObservationIgnored private var accessRoots: [URL] = []
-    @ObservationIgnored private var folderWatcher: FolderWatcher?
     @ObservationIgnored private var nextDocumentId = 1
-    @ObservationIgnored private let canonicalRootPath: String
+    @ObservationIgnored private var isClosed = false
 
     init(url: URL) {
         let url = url.normalizedFileURL
         rootURL = url
         scopes.append(SecurityScope(url: url))
         isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-        canonicalRootPath = PathPolicy.canonical(url).path(percentEncoded: false)
         accessRoots = [url]
         for folder in BookmarkStore.shared.grantedFolders(containing: url) {
             scopes.append(SecurityScope(url: folder))
             accessRoots.append(folder)
         }
 
-        if isFolder {
-            let root = FileNode(url: url, isDirectory: true)
-            root.reloadChildren()
-            self.root = root
-        } else {
-            root = nil
-        }
+        tree = isFolder ? FileTree.acquire(url) : nil
         search = SearchModel(root: isFolder ? url : nil)
         isSidebarVisible = isFolder
         sidebarMode = isFolder ? .files : .search
 
         configureEditor()
         configureSearch()
-        if isFolder {
-            folderWatcher = FolderWatcher(url: url) { [weak self] paths in self?.filesChanged(paths) }
-        }
     }
 
     private func configureSearch() {
@@ -356,9 +347,10 @@ final class Workspace {
     }
 
     func close() {
+        guard !isClosed else { return }
+        isClosed = true
         document?.stopWatching()
-        folderWatcher?.stop()
-        folderWatcher = nil
+        tree?.release()
         search.cancel()
         scopes.forEach { $0.stop() }
         scopes.removeAll()
@@ -379,48 +371,20 @@ final class Workspace {
         }
     }
 
-    private func relativeComponents(of url: URL) -> [String]? {
-        let path = PathPolicy.canonical(url).path(percentEncoded: false)
-        return relativeComponents(ofPath: path)
-    }
-
-    private func relativeComponents(ofPath path: String) -> [String]? {
-        if path == canonicalRootPath { return [] }
-        guard path.hasPrefix(canonicalRootPath + "/") else { return nil }
-        return path.dropFirst(canonicalRootPath.count + 1).split(separator: "/").map(String.init)
+    /// The sidebar node for `url`, if its folder has been listed.
+    func node(for url: URL) -> FileNode? {
+        tree?.loadedNode(for: url)
     }
 
     private func revealInSidebar(_ url: URL, expandingTarget: Bool) {
-        guard let root, var components = relativeComponents(of: url) else { return }
+        guard let tree, var components = tree.relativeComponents(of: url) else { return }
         if !expandingTarget { components = components.dropLast() }
-        var node = root
+        var node = tree.root
         for name in components {
             node.loadChildrenIfNeeded()
-            guard let child = node.children?.first(where: { $0.name == name && $0.isDirectory }) else { return }
+            guard let child = node.child(named: name), child.isDirectory else { return }
             setExpanded(child, true)
             node = child
-        }
-    }
-
-    private func loadedNode(atPath path: String) -> FileNode? {
-        guard let root, let components = relativeComponents(ofPath: path) else { return nil }
-        var node = root
-        for name in components {
-            guard let child = node.children?.first(where: { $0.name == name }) else { return nil }
-            node = child
-        }
-        return node
-    }
-
-    private func filesChanged(_ paths: [String]) {
-        var directories = Set<String>()
-        for path in paths {
-            directories.insert(path)
-            directories.insert((path as NSString).deletingLastPathComponent)
-        }
-        for directory in directories {
-            guard let node = loadedNode(atPath: directory), node.isDirectory, node.children != nil else { continue }
-            node.reloadChildren()
         }
     }
 }
