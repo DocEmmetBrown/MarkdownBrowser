@@ -320,6 +320,10 @@ body.markdown-body {
 
 .cm-md-block {
   overflow-x: auto;
+  /* Rendered HTML must not inherit the editor's source wrapping, which shows whitespace between table rows as blank lines. */
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .cm-md-block > :first-child {
