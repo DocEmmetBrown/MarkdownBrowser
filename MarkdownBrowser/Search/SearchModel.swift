@@ -65,16 +65,15 @@ final class SearchModel {
             isSearching = false
             return
         }
-        let matcher: FolderSearch.Matcher
         do {
-            matcher = try FolderSearch.Matcher(options)
+            if let message = try SearchEngine().validate(options) { throw SearchError.invalidPattern(message) }
         } catch {
             errorMessage = error.localizedDescription
             return
         }
         isSearching = true
         let (sources, _) = await gatherSources()
-        for await result in FolderSearch.run(sources: sources, matcher: matcher) {
+        for await result in FolderSearch.run(sources: sources, options: options) {
             guard !Task.isCancelled else { return }
             results.append(result)
         }
@@ -84,7 +83,7 @@ final class SearchModel {
     /// Open documents are edited in their editor (undoable, left unsaved); other files are rewritten on disk.
     func replaceAll() async {
         task?.cancel()
-        guard !options.query.isEmpty, let matcher = try? FolderSearch.Matcher(options) else { return }
+        guard !options.query.isEmpty, let engine = try? SearchEngine(), engine.validate(options) == nil else { return }
         isSearching = true
         let (sources, documents) = await gatherSources()
         var total = ReplaceSummary()
@@ -93,7 +92,7 @@ final class SearchModel {
             switch source {
             case .text(let url, let text, let separator):
                 let (replaced, count) = FolderSearch.replace(
-                    in: text, lineSeparator: separator, matcher: matcher, template: replacement)
+                    in: text, lineSeparator: separator, options: options, template: replacement, engine: engine)
                 guard count > 0, let document = documents[url], let editor = document.editor else { continue }
                 editor.applyText(docId: document.id, text: replaced)
                 total.files += 1
@@ -103,8 +102,9 @@ final class SearchModel {
             }
         }
         let template = replacement
+        let options = options
         let disk = await Task.detached(priority: .userInitiated) {
-            FolderSearch.replaceInFiles(diskFiles, matcher: matcher, template: template)
+            FolderSearch.replaceInFiles(diskFiles, options: options, template: template)
         }.value
         total.files += disk.files
         total.occurrences += disk.occurrences

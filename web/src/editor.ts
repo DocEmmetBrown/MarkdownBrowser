@@ -236,7 +236,7 @@ export function createEditor(parent: HTMLElement) {
       const doc = view.state.doc
       const line = doc.line(Math.min(Math.max(lineNumber, 1), doc.lines))
       const from = Math.min(line.from + column, line.to)
-      const to = Math.min(from + length, line.to)
+      const to = Math.min(from + length, doc.length)
       view.dispatch({
         selection: { anchor: from, head: to },
         effects: [EditorView.scrollIntoView(from, { y: "center" }), flashRange.of({ from, to })],
