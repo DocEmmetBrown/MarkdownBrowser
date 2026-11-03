@@ -120,6 +120,73 @@ export class AlertTitleWidget extends WidgetType {
   }
 }
 
+export class FootnoteRefWidget extends WidgetType {
+  constructor(
+    readonly number: number,
+    readonly href: string,
+  ) {
+    super()
+  }
+
+  eq(other: FootnoteRefWidget): boolean {
+    return other.number === this.number && other.href === this.href
+  }
+
+  toDOM(): HTMLElement {
+    const sup = document.createElement("sup")
+    sup.className = "cm-md-footnote-ref cm-md-link"
+    sup.setAttribute("data-href", this.href)
+    sup.textContent = String(this.number)
+    return sup
+  }
+
+  ignoreEvent(): boolean {
+    return false
+  }
+}
+
+export class FootnoteLabelWidget extends WidgetType {
+  constructor(readonly number: number) {
+    super()
+  }
+
+  eq(other: FootnoteLabelWidget): boolean {
+    return other.number === this.number
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement("span")
+    span.className = "cm-md-footnote-label"
+    span.textContent = `${this.number}.`
+    return span
+  }
+
+  ignoreEvent(): boolean {
+    return false
+  }
+}
+
+export class EmojiWidget extends WidgetType {
+  constructor(readonly emoji: string) {
+    super()
+  }
+
+  eq(other: EmojiWidget): boolean {
+    return other.emoji === this.emoji
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement("span")
+    span.className = "cm-md-emoji"
+    span.textContent = this.emoji
+    return span
+  }
+
+  ignoreEvent(): boolean {
+    return false
+  }
+}
+
 export class InlineMathWidget extends WidgetType {
   constructor(readonly tex: string) {
     super()

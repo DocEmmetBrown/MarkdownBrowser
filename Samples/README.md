@@ -9,6 +9,7 @@ A fixture for checking rendering against GitHub. Open this folder in the app.
 
 Some **bold**, *italic*, ~~strikethrough~~, `inline code`, and a [link to another page](docs/guide.md#installation).
 Bare URLs autolink: https://github.com. Escaped \*asterisks\* stay literal.
+Shortcodes become emoji :tada: :+1:, and footnotes are numbered[^first] in order of use[^second].
 
 Inline math $e^{i\pi} + 1 = 0$ and a block:
 
@@ -59,7 +60,7 @@ flowchart LR
 <details>
 <summary>Click to expand</summary>
 
-Hidden content.
+Hidden content with **Markdown** inside.
 
 </details>
 
@@ -71,3 +72,6 @@ Hidden content.
 See also the [reference link][guide].
 
 [guide]: docs/guide.md
+
+[^second]: Cmd+click a footnote number to jump here.
+[^first]: Definitions can be in any order.
