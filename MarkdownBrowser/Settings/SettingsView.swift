@@ -51,19 +51,36 @@ private struct GeneralSettingsView: View {
 
 private struct AppearanceSettingsView: View {
     @AppStorage(AppSettings.appearanceKey) private var appearance = AppearanceMode.system
+    @AppStorage(AppSettings.pageMarginsKey) private var pageMargins = PageMargins.none
+    @AppStorage(AppSettings.limitPageWidthKey) private var limitPageWidth = false
 
     var body: some View {
         Form {
-            Picker("Appearance", selection: $appearance) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
+            Section {
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                Text("Automatic follows the system setting. Applies to the app and rendered documents, including diagrams.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .pickerStyle(.segmented)
-            Text("Automatic follows the system setting. Applies to the app and rendered documents, including diagrams.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Section("Page") {
+                Picker("Margins", selection: $pageMargins) {
+                    ForEach(PageMargins.allCases) { margins in
+                        Text(margins.title).tag(margins)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Toggle("Limit text width, like GitHub", isOn: $limitPageWidth)
+                Text("Space around rendered Markdown. With the limit on, lines stop at 980 points and the page is centered.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)

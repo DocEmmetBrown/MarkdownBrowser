@@ -17,6 +17,7 @@ final class EditorHost: NSObject, DocumentEditor {
     private weak var loadedDocument: OpenDocument?
     private var loadedRootURL: URL?
     private var wrapsLines = AppSettings.wrapLongLines
+    private var pageLayout = AppSettings.pageLayout
     private let logger = Logger(subsystem: "MarkdownBrowser", category: "Editor")
 
     override init() {
@@ -42,13 +43,24 @@ final class EditorHost: NSObject, DocumentEditor {
             self, selector: #selector(defaultsChanged), name: UserDefaults.didChangeNotification, object: nil)
     }
 
-    /// Applies the Wrap Long Lines setting, changed from the Edit menu or Settings, to the open document.
+    /// Applies settings changed from the Edit menu or Settings to the open document.
     @objc private func defaultsChanged() {
+        let layout = AppSettings.pageLayout
+        if layout != pageLayout {
+            pageLayout = layout
+            applyPageLayout()
+        }
         let on = AppSettings.wrapLongLines
         guard on != wrapsLines else { return }
         wrapsLines = on
         pendingLoad?["wrapLines"] = on
         run("window.mdb.setLineWrapping(on)", ["on": on])
+    }
+
+    private func applyPageLayout() {
+        run(
+            "window.mdb.setPageLayout(layout)",
+            ["layout": ["margin": pageLayout.margins.points, "limitWidth": pageLayout.limitsWidth]])
     }
 
     func load(_ document: OpenDocument, rootURL: URL?, anchor: String?) {
@@ -199,6 +211,7 @@ final class EditorHost: NSObject, DocumentEditor {
         case "ready":
             isReady = true
             logger.notice("Editor ready")
+            applyPageLayout()
             if let args = pendingLoad ?? reloadArguments() {
                 pendingLoad = nil
                 run("window.mdb.load(args)", ["args": args])

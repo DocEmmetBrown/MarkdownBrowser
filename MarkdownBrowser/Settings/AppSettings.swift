@@ -25,18 +25,63 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum PageMargins: String, CaseIterable, Identifiable {
+    case none
+    case narrow
+    case normal
+    case wide
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .narrow: "Narrow"
+        case .normal: "Normal"
+        case .wide: "Wide"
+        }
+    }
+
+    /// Space beside rendered Markdown, in points; "None" keeps a small gutter so text doesn't touch the edge.
+    var points: Int {
+        switch self {
+        case .none: 12
+        case .narrow: 24
+        case .normal: 45
+        case .wide: 96
+        }
+    }
+}
+
+struct PageLayout: Equatable {
+    var margins: PageMargins
+    /// Caps lines at GitHub's 980-point page width.
+    var limitsWidth: Bool
+}
+
 enum AppSettings {
     static let autosaveOnFocusLossKey = "autosaveOnFocusLoss"
     static let appearanceKey = "appearance"
     static let commandLineToolOfferedKey = "commandLineToolOffered"
     static let wrapLongLinesKey = "wrapLongLines"
+    static let pageMarginsKey = "pageMargins"
+    static let limitPageWidthKey = "limitPageWidth"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             autosaveOnFocusLossKey: true,
             appearanceKey: AppearanceMode.system.rawValue,
             wrapLongLinesKey: true,
+            pageMarginsKey: PageMargins.none.rawValue,
+            limitPageWidthKey: false,
         ])
+    }
+
+    static var pageLayout: PageLayout {
+        let defaults = UserDefaults.standard
+        return PageLayout(
+            margins: defaults.string(forKey: pageMarginsKey).flatMap(PageMargins.init(rawValue:)) ?? .none,
+            limitsWidth: defaults.bool(forKey: limitPageWidthKey))
     }
 
     static var wrapLongLines: Bool {

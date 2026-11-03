@@ -121,4 +121,16 @@ describe("live preview", () => {
     api.setLineWrapping(true)
     expect(wraps()).toBe(true)
   })
+
+  it("applies page margins and the optional width limit", () => {
+    const style = document.documentElement.style
+    api.setPageLayout({ margin: 45, limitWidth: true })
+    expect(style.getPropertyValue("--mdb-page-margin")).toBe("45px")
+    expect(style.getPropertyValue("--mdb-page-margin-top")).toBe("32px")
+    expect(style.getPropertyValue("--mdb-page-max-width")).toBe("980px")
+    api.setPageLayout({ margin: 0, limitWidth: false })
+    expect(style.getPropertyValue("--mdb-page-margin")).toBe("0px")
+    expect(style.getPropertyValue("--mdb-page-margin-top")).toBe("12px")
+    expect(style.getPropertyValue("--mdb-page-max-width")).toBe("none")
+  })
 })
