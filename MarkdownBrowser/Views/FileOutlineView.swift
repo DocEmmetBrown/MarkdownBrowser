@@ -6,6 +6,8 @@ import SwiftUI
 struct FileOutlineView: NSViewRepresentable {
     enum Activation {
         case open
+        /// Double-click: open and keep the tab.
+        case pin
         case openInNewTab
     }
 
@@ -35,6 +37,7 @@ struct FileOutlineView: NSViewRepresentable {
         outline.delegate = context.coordinator
         outline.target = context.coordinator
         outline.action = #selector(Coordinator.clicked(_:))
+        outline.doubleAction = #selector(Coordinator.doubleClicked(_:))
         outline.onCommandClick = { [weak coordinator = context.coordinator] row in coordinator?.commandClicked(row) }
         let menu = NSMenu()
         menu.delegate = context.coordinator
@@ -46,6 +49,18 @@ struct FileOutlineView: NSViewRepresentable {
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            context.coordinator, selector: #selector(Coordinator.scrolled(_:)),
+            name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+        // A tab opened from another tab's sidebar starts where that sidebar was scrolled.
+        let offset = workspace.sidebarScrollOffset
+        if offset > 0 {
+            DispatchQueue.main.async {
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: offset))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
         return scroll
     }
 
@@ -142,6 +157,17 @@ struct FileOutlineView: NSViewRepresentable {
             } else {
                 sender.animator().expandItem(node)
             }
+        }
+
+        @objc func doubleClicked(_ sender: NSOutlineView) {
+            let row = sender.clickedRow
+            guard row >= 0, let node = sender.item(atRow: row) as? FileNode, !node.isDirectory else { return }
+            activate(node.url, .pin)
+        }
+
+        @objc func scrolled(_ notification: Notification) {
+            guard let clip = notification.object as? NSClipView else { return }
+            parent?.workspace.sidebarScrollOffset = clip.bounds.origin.y
         }
 
         func commandClicked(_ row: Int) {

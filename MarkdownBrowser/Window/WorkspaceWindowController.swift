@@ -5,6 +5,8 @@ import SwiftUI
 @Observable
 final class WindowState {
     var workspace: Workspace?
+    /// A preview tab (italic title) is replaced by the next file opened from the sidebar, like in VS Code.
+    var isPreview = false
 }
 
 /// AppKit-managed window (or tab) hosting SwiftUI content, so we control tabbing, close prompts and focus events.
@@ -40,24 +42,86 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
 
     var hasUnsavedChanges: Bool { workspace?.document?.isDirty ?? false }
 
-    func show(_ url: URL, selecting file: URL? = nil, anchor: String? = nil) {
+    func show(
+        _ url: URL, selecting file: URL? = nil, anchor: String? = nil, hit: SearchHit? = nil, preview: Bool = true,
+        inheritingSidebarFrom source: Workspace? = nil
+    ) {
         let workspace = Workspace(url: url)
         workspace.delegate = self
+        if let source { workspace.inheritSidebar(from: source) }
         state.workspace?.close()
         state.workspace = workspace
+        state.isPreview = preview && workspace.isFolder
         BookmarkStore.shared.noteOpened(workspace.rootURL, isDirectory: workspace.isFolder)
         if let target = file ?? workspace.defaultSelection() {
-            Task { await workspace.open(target, anchor: anchor, recordHistory: false) }
+            Task { await workspace.open(target, anchor: anchor, hit: hit, recordHistory: false) }
         }
     }
 
     private func observeWindowState() {
         withObservationTracking {
-            window?.isDocumentEdited = state.workspace?.document?.isDirty ?? false
+            let document = state.workspace?.document
+            window?.isDocumentEdited = document?.isDirty ?? false
             window?.representedURL = state.workspace?.selection
+            // Editing a preview keeps it, as in VS Code.
+            if document?.isDirty == true, state.isPreview { state.isPreview = false }
+            updateTabTitle()
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.observeWindowState() }
         }
+    }
+
+    /// Tabs show the file name (all tabs of a folder share the window title); previews are slanted.
+    private func updateTabTitle() {
+        guard let window else { return }
+        guard let workspace = state.workspace, let selection = workspace.selection else {
+            window.tab.attributedTitle = nil
+            window.tab.toolTip = nil
+            return
+        }
+        let attributes: [NSAttributedString.Key: Any] = state.isPreview ? [.obliqueness: 0.2] : [:]
+        window.tab.attributedTitle = NSAttributedString(string: selection.lastPathComponent, attributes: attributes)
+        let path = workspace.subtitle.isEmpty ? selection.lastPathComponent : workspace.subtitle
+        window.tab.toolTip = state.isPreview ? "\(path) (preview)" : path
+    }
+
+    /// Keeps this tab: the next file opened from the sidebar goes to another tab.
+    func pin() {
+        state.isPreview = false
+    }
+
+    /// This window's tabs on the same folder, in tab-bar order.
+    private var siblingTabs: [WorkspaceWindowController] {
+        let windows = window?.tabGroup?.windows ?? window.map { [$0] } ?? []
+        return windows.compactMap { $0.windowController as? WorkspaceWindowController }
+            .filter { $0.workspace?.rootURL == workspace?.rootURL }
+    }
+
+    /// VS Code-style opening: show the tab that already has the file, else reuse the preview tab, else open a
+    /// preview tab next to this one.
+    func showFromSidebar(_ url: URL, hit: SearchHit?, pin: Bool) async {
+        guard let workspace, let window else { return }
+        let url = url.normalizedFileURL
+        let tabs = siblingTabs
+        if let existing = tabs.first(where: { $0.workspace?.selection == url }) {
+            existing.select()
+            if let hit { await existing.workspace?.open(url, hit: hit) }
+            if pin { existing.pin() }
+            return
+        }
+        if let preview = state.isPreview ? self : tabs.first(where: { $0.state.isPreview }) {
+            preview.select()
+            if await preview.workspace?.open(url, hit: hit) == true, pin { preview.pin() }
+            return
+        }
+        let controller = WindowManager.shared.newWindow(tabbedWith: window)
+        controller.show(
+            workspace.rootURL, selecting: url, hit: hit, preview: !pin, inheritingSidebarFrom: workspace)
+    }
+
+    private func select() {
+        guard let window, window.tabGroup?.selectedWindow !== window else { return }
+        window.makeKeyAndOrderFront(nil)
     }
 
     // MARK: Commands
@@ -220,7 +284,38 @@ extension WorkspaceWindowController: WorkspaceDelegate {
 
     func workspace(_ workspace: Workspace, openInNewTab url: URL, anchor: String?) {
         let controller = WindowManager.shared.newWindow(tabbedWith: window)
-        controller.show(workspace.rootURL, selecting: url, anchor: anchor)
+        controller.show(
+            workspace.rootURL, selecting: url, anchor: anchor, preview: false, inheritingSidebarFrom: workspace)
+    }
+
+    func workspace(_ workspace: Workspace, showFromSidebar url: URL, hit: SearchHit?, pin: Bool) async {
+        await showFromSidebar(url, hit: hit, pin: pin)
+    }
+}
+
+/// Double-clicking a tab keeps it (ends its preview), as in VS Code. AppKit has no API for clicks on tabs, so this
+/// finds the tab button under the click.
+enum TabDoubleClickMonitor {
+    static func install() {
+        NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            guard event.clickCount == 2, let controller = tabController(at: event) else { return event }
+            controller.pin()
+            return nil
+        }
+    }
+
+    static func tabController(at event: NSEvent) -> WorkspaceWindowController? {
+        guard let window = event.window, let frame = window.contentView?.superview,
+            let windows = window.tabGroup?.windows, windows.count > 1
+        else { return nil }
+        var view = frame.hitTest(event.locationInWindow)
+        while let current = view, String(describing: type(of: current)) != "NSTabButton" { view = current.superview }
+        guard let button = view, let bar = button.superview else { return nil }
+        let buttons = bar.subviews.filter { String(describing: type(of: $0)) == "NSTabButton" }.sorted {
+            $0.frame.minX < $1.frame.minX
+        }
+        guard buttons.count == windows.count, let index = buttons.firstIndex(where: { $0 === button }) else { return nil }
+        return windows[index].windowController as? WorkspaceWindowController
     }
 }
 

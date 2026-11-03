@@ -7,6 +7,8 @@ protocol WorkspaceDelegate: AnyObject {
     /// Asks the user to grant a folder that contains `url`; returns the granted folder.
     func workspace(_ workspace: Workspace, requestAccessTo url: URL) async -> URL?
     func workspace(_ workspace: Workspace, openInNewTab url: URL, anchor: String?)
+    /// Opens a file chosen in the sidebar or search results: in the preview tab, or a new one (`pin` keeps it).
+    func workspace(_ workspace: Workspace, showFromSidebar url: URL, hit: SearchHit?, pin: Bool) async
 }
 
 enum SidebarMode: Hashable {
@@ -46,6 +48,8 @@ final class Workspace {
 
     @ObservationIgnored let editor = EditorHost()
     @ObservationIgnored weak var delegate: WorkspaceDelegate?
+    /// Sidebar scroll position, carried over to tabs opened from the sidebar.
+    @ObservationIgnored var sidebarScrollOffset: CGFloat = 0
     @ObservationIgnored private var scopes: [SecurityScope] = []
     @ObservationIgnored private var accessRoots: [URL] = []
     @ObservationIgnored private var nextDocumentId = 1
@@ -320,14 +324,27 @@ final class Workspace {
         search.focusRequest += 1
     }
 
-    /// Opens a search hit here when this workspace can reach it, otherwise in the window that has it open.
+    /// Opens a search hit like a sidebar click when this workspace can reach it, otherwise in the window that has it.
     func reveal(_ hit: SearchHit) async {
         if canAccess(hit.url) {
-            await open(hit.url, hit: hit)
+            if let delegate {
+                await delegate.workspace(self, showFromSidebar: hit.url, hit: hit, pin: false)
+            } else {
+                await open(hit.url, hit: hit)
+            }
         } else if let other = WindowManager.shared.controller(showing: hit.url), let workspace = other.workspace {
             other.window?.makeKeyAndOrderFront(nil)
             await workspace.open(hit.url, hit: hit)
         }
+    }
+
+    /// Gives a tab opened from this one's sidebar the same sidebar: expanded folders, mode, search and scroll.
+    func inheritSidebar(from other: Workspace) {
+        expanded = other.expanded
+        sidebarMode = other.sidebarMode
+        isSidebarVisible = other.isSidebarVisible
+        sidebarScrollOffset = other.sidebarScrollOffset
+        search.adopt(other.search)
     }
 
     // MARK: Editing

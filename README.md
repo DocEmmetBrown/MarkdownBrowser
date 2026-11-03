@@ -4,7 +4,7 @@ A native macOS app for browsing and editing Markdown. Open a file or a whole fol
 
 ## Features
 
-- **Browse files and folders**: open a single file or a folder; folders get a sidebar file tree that updates when files change on disk, and open on their README.
+- **Browse files and folders**: open a single file or a folder; folders get a sidebar file tree, sorted by name like Finder, that updates when files change on disk, stays fast with tens of thousands of files, and opens on the folder's README.
 - **GitHub-style rendering**: GitHub's stylesheet and colors; tables, task lists, `> [!NOTE]` alerts, footnotes, `:emoji:` shortcodes, math (`$…$`, `$$…$$`), raw HTML (sanitized, including `<details>` wrapping Markdown), images, and syntax-highlighted code.
 - **Mermaid diagrams**: ```` ```mermaid ```` blocks render as diagrams and switch theme with light/dark mode.
 - **Edit in the rendered view**: click anywhere to edit; the Markdown syntax appears only where the cursor is. Edits change exactly the characters you type: line endings, encoding and formatting elsewhere are preserved byte for byte.
@@ -13,7 +13,7 @@ A native macOS app for browsing and editing Markdown. Open a file or a whole fol
 - **Other files**: text and code open as editable source with syntax highlighting; images, videos and everything else use native viewers (Quick Look for the rest).
 - **Find & replace**: a find bar for the current file, and Find in Files across the current file, all open files, or the whole folder. Options for match case, regex, and wrap around; Replace All with confirmation. Both use JavaScript regex syntax and the same matching code, and patterns can span lines (`foo\nbar`); regex replacements can use `$&`, `$1` and `\n`.
 - **Saving**: ⌘S, or autosave when the window or app loses focus (on by default, can be turned off in Settings). Changes made by other apps are detected and never silently overwritten.
-- **Tabs and windows**: native macOS tabs (⌘T) and multiple windows.
+- **Tabs and windows**: native macOS tabs (⌘T) and multiple windows. As in VS Code, a file clicked in the sidebar opens in a preview tab (slanted title) that the next click replaces; double-click the file or the tab, edit it, or choose **Keep Tab Open** (⌥⌘K) to keep it, and the next click opens a new tab.
 - **Appearance**: Automatic, Light or Dark.
 - **Command line**: `mdb` opens the current directory or any path, like Sublime Text's `subl`.
 
@@ -80,6 +80,7 @@ The link points into the app, so reinstall it if you move the app.
 | Back / forward | ⌘[ / ⌘] |
 | Follow link (in a new tab) | ⌘-click (⇧⌘-click) |
 | Open sidebar file in a new tab | ⌘-click |
+| Keep a preview tab open | ⌥⌘K, or double-click the tab |
 | Find / find and replace | ⌘F / ⌥⌘F |
 | Find next / previous | ⌘G / ⇧⌘G |
 | Find in Files | ⇧⌘F |

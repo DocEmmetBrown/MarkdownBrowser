@@ -56,6 +56,18 @@ final class SearchModel {
         isSearching = false
     }
 
+    /// Copies another model's query and finished results, e.g. into a tab opened from a search result.
+    func adopt(_ other: SearchModel) {
+        options = other.options
+        replacement = other.replacement
+        wrap = other.wrap
+        if availableScopes.contains(other.scope) { scope = other.scope }
+        results = other.results
+        currentHitID = other.currentHitID
+        summary = other.summary
+        errorMessage = other.errorMessage
+    }
+
     func search() async {
         results = []
         errorMessage = nil

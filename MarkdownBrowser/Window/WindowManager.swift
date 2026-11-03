@@ -61,7 +61,7 @@ final class WindowManager {
             let folderWindow = controllers.first(where: { $0.workspace?.isFolder == true && $0.workspace?.canAccess(url) == true })
         {
             folderWindow.window?.makeKeyAndOrderFront(nil)
-            Task { await folderWindow.workspace?.open(url) }
+            Task { await folderWindow.showFromSidebar(url, hit: nil, pin: false) }
             return
         }
         let target: WorkspaceWindowController
