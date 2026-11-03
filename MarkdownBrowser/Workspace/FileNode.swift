@@ -34,13 +34,15 @@ final class FileNode {
     /// Lists the directory, reusing existing child nodes so expanded subtrees stay loaded.
     func reloadChildren() {
         guard isDirectory else { return }
+        let isRelisting = children != nil
         let nodes = Self.entries(in: url).map { entry in
             if let node = childrenByName[entry.name], node.isDirectory == entry.isDirectory { return node }
             return FileNode(name: entry.name, in: url, isDirectory: entry.isDirectory)
         }
         children = nodes
         childrenByName = Dictionary(nodes.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-        NotificationCenter.default.post(name: Self.didReloadChildren, object: self)
+        // A first listing is what NSOutlineView asked for while expanding; reloading the item then raises an exception.
+        if isRelisting { NotificationCenter.default.post(name: Self.didReloadChildren, object: self) }
     }
 
     func loadChildrenIfNeeded() {
