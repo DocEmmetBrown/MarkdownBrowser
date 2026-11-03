@@ -8,12 +8,14 @@ final class EditorHost: NSObject, DocumentEditor {
     let schemeHandler: LocalResourceSchemeHandler
 
     var onDirtyChange: (Int, Bool) -> Void = { _, _ in }
+    var onUnsavedText: (Int, String) -> Void = { _, _ in }
     var onOpenLink: (Int, String, Bool) -> Void = { _, _, _ in }
     var onFindStatus: (Int, FindStatus) -> Void = { _, _ in }
 
     private var isReady = false
     private var pendingLoad: [String: Any]?
-    private var lastLoad: [String: Any]?
+    private weak var loadedDocument: OpenDocument?
+    private var loadedRootURL: URL?
     private let logger = Logger(subsystem: "MarkdownBrowser", category: "Editor")
 
     override init() {
@@ -38,9 +40,22 @@ final class EditorHost: NSObject, DocumentEditor {
     }
 
     func load(_ document: OpenDocument, rootURL: URL?, anchor: String?) {
-        let args: [String: Any] = [
+        loadedDocument = document
+        loadedRootURL = rootURL
+        let args = Self.loadArguments(for: document, rootURL: rootURL, anchor: anchor)
+        if isReady {
+            run("window.mdb.load(args)", ["args": args])
+        } else {
+            pendingLoad = args
+        }
+    }
+
+    /// Built from the document's current state, so a reload after a crash gets the latest saved and unsaved text.
+    static func loadArguments(for document: OpenDocument, rootURL: URL?, anchor: String?) -> [String: Any] {
+        [
             "docId": document.id,
             "text": document.content.text,
+            "current": document.recoveryText ?? NSNull(),
             "lineSeparator": document.content.lineSeparator,
             "kind": document.kind == .markdown ? "markdown" : "text",
             "fileName": document.name,
@@ -49,12 +64,6 @@ final class EditorHost: NSObject, DocumentEditor {
             "sourceMode": document.sourceMode,
             "anchor": anchor ?? NSNull(),
         ]
-        lastLoad = args
-        if isReady {
-            run("window.mdb.load(args)", ["args": args])
-        } else {
-            pendingLoad = args
-        }
     }
 
     func setSourceMode(_ on: Bool) {
@@ -155,6 +164,10 @@ final class EditorHost: NSObject, DocumentEditor {
 
     // MARK: Bridge
 
+    private func reloadArguments() -> [String: Any]? {
+        loadedDocument.map { Self.loadArguments(for: $0, rootURL: loadedRootURL, anchor: nil) }
+    }
+
     private func run(_ script: String, _ arguments: [String: Any]) {
         guard isReady else { return }
         Task {
@@ -173,12 +186,15 @@ final class EditorHost: NSObject, DocumentEditor {
         case "ready":
             isReady = true
             logger.notice("Editor ready")
-            if let args = pendingLoad ?? lastLoad {
+            if let args = pendingLoad ?? reloadArguments() {
                 pendingLoad = nil
                 run("window.mdb.load(args)", ["args": args])
             }
         case "dirty":
             onDirtyChange(docId, message["dirty"] as? Bool ?? false)
+        case "text":
+            guard let text = message["text"] as? String else { return }
+            onUnsavedText(docId, text)
         case "openLink":
             guard let href = message["href"] as? String else { return }
             onOpenLink(docId, href, message["newTab"] as? Bool ?? false)
@@ -210,7 +226,9 @@ extension EditorHost: WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         isReady = false
-        pendingLoad = lastLoad
+        pendingLoad = reloadArguments()
+        let restored = loadedDocument?.recoveryText?.utf16.count ?? 0
+        logger.error("Editor process terminated; reloading with \(restored) unsaved UTF-16 units restored")
         webView.load(URLRequest(url: LocalResourceSchemeHandler.editorURL))
     }
 

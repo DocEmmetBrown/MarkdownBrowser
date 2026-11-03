@@ -1,6 +1,7 @@
 export type OutMessage =
   | { type: "ready" }
   | { type: "dirty"; docId: number; dirty: boolean }
+  | { type: "text"; docId: number; text: string }
   | { type: "openLink"; docId: number; href: string; newTab: boolean }
   | {
       type: "findStatus"

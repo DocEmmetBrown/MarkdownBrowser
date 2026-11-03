@@ -94,7 +94,7 @@ The link points into the app, so reinstall it if you move the app.
 
 - Tables, diagrams and HTML inside blockquotes are shown as source.
 - A footnote definition ends at the first blank line, so multi-paragraph footnotes aren't supported.
-- If the editor's web process crashes, edits since the last save are lost.
+- If the editor's web process crashes, the last second of typing may be lost, along with undo history.
 - The find bar uses JavaScript regex syntax; Find in Files uses ICU (`NSRegularExpression`) and matches within a single line.
 
 ## Project layout
