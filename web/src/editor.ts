@@ -207,6 +207,16 @@ export function createEditor(parent: HTMLElement) {
       view.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) })
     },
 
+    /** Space around rendered Markdown, and GitHub's 980px page width when `limitWidth` is set. */
+    setPageLayout(layout: { margin: number; limitWidth: boolean }): void {
+      const style = document.documentElement.style
+      const margin = Math.max(0, layout.margin)
+      style.setProperty("--mdb-page-margin", `${margin}px`)
+      style.setProperty("--mdb-page-margin-top", `${Math.min(Math.max(margin, 12), 32)}px`)
+      style.setProperty("--mdb-page-max-width", layout.limitWidth ? "980px" : "none")
+      view.requestMeasure()
+    },
+
     snapshot(id: number): Snapshot | null {
       if (id !== docId) return null
       const snapshotId = ++snapshotCounter

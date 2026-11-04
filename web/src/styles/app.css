@@ -96,9 +96,10 @@ body.markdown-body {
 }
 
 .cm-live .cm-content {
-  max-width: 980px;
+  /* Set from the app's Page settings (setPageLayout); no margins by default. */
+  max-width: var(--mdb-page-max-width, none);
   margin: 0 auto;
-  padding: 32px 45px 40vh;
+  padding: var(--mdb-page-margin-top, 12px) var(--mdb-page-margin, 12px) 40vh;
   box-sizing: border-box;
   color: var(--fgColor-default);
 }

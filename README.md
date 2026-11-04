@@ -90,7 +90,7 @@ The link points into the app, so reinstall it if you move the app.
 
 - **General**: autosave when focus is lost (on by default). When off, you're asked before unsaved changes are discarded. Install the `mdb` command.
 - **Wrap long lines** (on by default, also in the Edit menu): wrap lines wider than the window instead of scrolling sideways, in rendered Markdown, Markdown source and other text files.
-- **Appearance**: Automatic (follows macOS), Light, or Dark.
+- **Appearance**: Automatic (follows macOS), Light, or Dark. Page margins around rendered Markdown (none by default, or narrow, normal, wide), and an optional GitHub-style 980-point text width.
 
 ## Known limitations
 
