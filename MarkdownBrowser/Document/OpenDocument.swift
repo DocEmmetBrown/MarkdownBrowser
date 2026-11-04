@@ -46,11 +46,19 @@ final class OpenDocument: Identifiable {
     var lastError: String?
 
     @ObservationIgnored weak var editor: DocumentEditor?
+    /// Latest unsaved text reported by the editor, restored if its web process dies.
+    @ObservationIgnored var unsavedText: String?
     @ObservationIgnored private var diskHash: Data
     @ObservationIgnored private var watcher: FileWatcher?
     @ObservationIgnored private var isSaving = false
 
     var name: String { url.lastPathComponent }
+
+    /// The text to restore into a restarted editor, if it differs from the saved version.
+    var recoveryText: String? {
+        guard isDirty, let unsavedText, unsavedText != content.text else { return nil }
+        return unsavedText
+    }
 
     init(id: Int, url: URL, kind: FileKind) throws {
         let data = try Data(contentsOf: url)
@@ -101,6 +109,7 @@ final class OpenDocument: Identifiable {
         }
         diskHash = Self.hash(data)
         content = DecodedText(text: snapshot.text, encoding: encoding, lineSeparator: content.lineSeparator)
+        if unsavedText == snapshot.text { unsavedText = nil }
         diskState = .inSync
         lastError = nil
         await editor.markSaved(docId: id, snapshotId: snapshot.snapshotId)
@@ -145,6 +154,7 @@ final class OpenDocument: Identifiable {
         content = DecodedText(text: decoded.text, encoding: decoded.encoding, lineSeparator: content.lineSeparator)
         diskState = .inSync
         isDirty = false
+        unsavedText = nil
         editor?.replaceText(docId: id, text: decoded.text)
     }
 

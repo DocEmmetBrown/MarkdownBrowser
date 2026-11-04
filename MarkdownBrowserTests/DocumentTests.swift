@@ -62,6 +62,38 @@ final class FakeEditor: DocumentEditor {
         #expect(try String(contentsOf: url, encoding: .utf8) == "# A\r\nmore\r\n")
     }
 
+    @Test func restoresUnsavedTextAfterEditorRestart() async throws {
+        let (document, editor, url) = try makeDocument("saved\n")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(EditorHost.loadArguments(for: document, rootURL: nil, anchor: nil)["current"] is NSNull)
+        editor.text = "saved\nunsaved\n"
+        document.isDirty = true
+        document.unsavedText = editor.text
+        var args = EditorHost.loadArguments(for: document, rootURL: nil, anchor: nil)
+        #expect(args["text"] as? String == "saved\n")
+        #expect(args["current"] as? String == "saved\nunsaved\n")
+
+        // Saving refreshes the baseline, so a later restart doesn't bring back an old load.
+        #expect(await document.save() == .saved)
+        document.isDirty = false
+        args = EditorHost.loadArguments(for: document, rootURL: nil, anchor: nil)
+        #expect(args["text"] as? String == "saved\nunsaved\n")
+        #expect(args["current"] is NSNull)
+        #expect(document.unsavedText == nil)
+    }
+
+    @Test func keepsNewerUnsavedTextReportedDuringSave() async throws {
+        let (document, editor, url) = try makeDocument("a\n")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        editor.text = "b\n"
+        document.isDirty = true
+        document.unsavedText = "c\n"
+        #expect(await document.save() == .saved)
+        #expect(document.recoveryText == "c\n")
+    }
+
     @Test func refusesToOverwriteExternalChanges() async throws {
         let (document, editor, url) = try makeDocument("original\n")
         defer { try? FileManager.default.removeItem(at: url) }

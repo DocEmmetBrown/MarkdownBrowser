@@ -24,6 +24,7 @@ describe("bridge", () => {
     const messages: OutMessage[] = [
       { type: "ready" },
       { type: "dirty", docId: 3, dirty: true },
+      { type: "text", docId: 3, text: "unsaved" },
       { type: "openLink", docId: 3, href: "https://example.com", newTab: false },
       { type: "findStatus", docId: 3, current: 1, total: 4, valid: true, wrapped: false, atEnd: false },
       { type: "error", message: "boom" },

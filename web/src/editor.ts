@@ -49,6 +49,8 @@ export interface LoadArgs {
   rootURL: string | null
   sourceMode: boolean
   anchor?: string | null
+  /** Unsaved text to show instead of `text` (the saved version), e.g. after the web process restarted. */
+  current?: string | null
 }
 
 export interface Snapshot {
@@ -58,6 +60,9 @@ export interface Snapshot {
 }
 
 const extraHighlighting = HighlightStyle.define([{ tag: tags.strikethrough, textDecoration: "line-through" }])
+
+/** How long after the last edit the unsaved text is copied to Swift, which restores it if this process dies. */
+export const unsavedTextDelay = 1000
 
 // Cmd+[ / Cmd+] are the app's Back/Forward shortcuts; find shortcuts belong to the native find bar.
 const editorKeymap = defaultKeymap.filter((binding) => binding.key !== "Mod-[" && binding.key !== "Mod-]")
@@ -70,6 +75,7 @@ export function createEditor(parent: HTMLElement) {
   let reportedDirty = false
   let applyingExternalChange = false
   let dirtyCheck: ReturnType<typeof setTimeout> | undefined
+  let unsavedTextUpdate: ReturnType<typeof setTimeout> | undefined
   let findStatusUpdate: ReturnType<typeof setTimeout> | undefined
   let snapshotCounter = 0
   const snapshots = new Map<number, Text>()
@@ -97,6 +103,10 @@ export function createEditor(parent: HTMLElement) {
     setDirty(true)
     clearTimeout(dirtyCheck)
     dirtyCheck = setTimeout(() => setDirty(!view.state.doc.eq(savedDoc)), 150)
+    clearTimeout(unsavedTextUpdate)
+    unsavedTextUpdate = setTimeout(() => {
+      if (!view.state.doc.eq(savedDoc)) post({ type: "text", docId, text: view.state.sliceDoc() })
+    }, unsavedTextDelay)
   }
 
   function openLink(href: string, newTab: boolean): void {
@@ -152,13 +162,15 @@ export function createEditor(parent: HTMLElement) {
 
   function load(args: LoadArgs): void {
     clearTimeout(dirtyCheck)
+    clearTimeout(unsavedTextUpdate)
     docId = args.docId
     kind = args.kind
     sourceMode = args.sourceMode
     snapshots.clear()
-    const state = EditorState.create({ doc: args.text, extensions: commonExtensions(args) })
-    savedDoc = state.doc
-    reportedDirty = false
+    const state = EditorState.create({ doc: args.current ?? args.text, extensions: commonExtensions(args) })
+    savedDoc = args.current == null ? state.doc : state.toText(args.text)
+    reportedDirty = !state.doc.eq(savedDoc)
+    post({ type: "dirty", docId, dirty: reportedDirty })
     view.setState(state)
     view.scrollDOM.scrollTop = 0
 

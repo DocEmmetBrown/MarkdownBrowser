@@ -97,6 +97,11 @@ final class Workspace {
         editor.onDirtyChange = { [weak self] docId, dirty in
             guard let document = self?.document, document.id == docId else { return }
             document.isDirty = dirty
+            if !dirty { document.unsavedText = nil }
+        }
+        editor.onUnsavedText = { [weak self] docId, text in
+            guard let document = self?.document, document.id == docId else { return }
+            document.unsavedText = text
         }
         editor.onOpenLink = { [weak self] docId, href, newTab in
             guard let self, self.document?.id == docId else { return }

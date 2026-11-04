@@ -40,8 +40,8 @@ flowchart LR
 
 - **Windows** are AppKit `NSWindowController`s hosting SwiftUI (`WindowManager`, `WorkspaceWindowController`). This gives us native tabs, close prompts and focus events. The SwiftUI `App` only declares the Settings scene and menu commands.
 - **`Workspace`** is one window's session: root folder or file, the file tree, navigation history, the open document, find state and security-scoped access.
-- **`OpenDocument`** owns a file's encoding, line separator, on-disk hash and saving. The live text lives in the editor; Swift asks for a snapshot when saving.
-- **`EditorHost`** wraps the `WKWebView` and the JS bridge. Swift calls `window.mdb.*` through `callAsyncJavaScript` with arguments, never by building script strings. JS posts typed messages (`ready`, `dirty`, `openLink`, `findStatus`, `error`) back.
+- **`OpenDocument`** owns a file's encoding, line separator, on-disk hash and saving. The live text lives in the editor; Swift asks for a snapshot when saving. The editor also sends unsaved text about a second after typing stops, so `EditorHost` can restore it if the web process crashes.
+- **`EditorHost`** wraps the `WKWebView` and the JS bridge. Swift calls `window.mdb.*` through `callAsyncJavaScript` with arguments, never by building script strings. JS posts typed messages (`ready`, `dirty`, `text`, `openLink`, `findStatus`, `error`) back.
 - **`LocalResourceSchemeHandler`** serves the bundled editor (`mdb-app://bundle/`) and workspace files (`mdb-file://local/<path>`). Every local request is checked against the workspace's granted folders.
 - **The editor** (`web/src`) is CodeMirror 6 with a live-preview layer:
   - `livePreview/inline.ts` hides Markdown syntax and styles text.
@@ -119,8 +119,9 @@ Some things can only be checked by hand. Open `Samples/` in the app and confirm:
 3. Editing and saving changes only what you typed (`git diff` or `cmp` against a copy).
 4. ⌘-clicking `docs/guide.md#installation` opens the guide at that heading, and ⌘[ goes back.
 5. Editing a file in another app reloads it, or shows the conflict banner if you have unsaved changes.
-6. Find bar and Find in Files work in each scope, with wrap on and off.
-7. `cli/mdb` opens the current directory and given paths.
+6. With unsaved edits, `pkill -f com.apple.WebKit.WebContent` (closes web content in other apps too) restores the editor with the edits still unsaved.
+7. Find bar and Find in Files work in each scope, with wrap on and off.
+8. `cli/mdb` opens the current directory and given paths.
 
 When you fix a bug, add a test that fails without the fix.
 
