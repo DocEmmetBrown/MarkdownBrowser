@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if WindowManager.shared.controllers.isEmpty {
             WindowManager.shared.newWindow()
         }
+        DispatchQueue.main.async { CommandLineToolInstaller.offerOnFirstLaunch() }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

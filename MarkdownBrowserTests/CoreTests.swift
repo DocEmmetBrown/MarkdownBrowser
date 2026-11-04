@@ -77,6 +77,38 @@ import Testing
     }
 }
 
+@Suite struct CommandLineToolInstallerTests {
+    @Test func linksAndReplacesOnlyEarlierLaunchers() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let link = dir.appending(path: "mdb")
+        let oldTool = URL(filePath: "/Applications/Old.app/Contents/SharedSupport/bin/mdb")
+        let tool = URL(filePath: "/Applications/MarkdownBrowser.app/Contents/SharedSupport/bin/mdb")
+
+        try CommandLineToolInstaller.createLink(at: link, to: oldTool, replacingExisting: false)
+        try CommandLineToolInstaller.createLink(at: link, to: tool, replacingExisting: false)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == tool.path)
+
+        try FileManager.default.removeItem(at: link)
+        try Data("#!/bin/sh\n".utf8).write(to: link)
+        #expect(throws: CommandLineToolInstaller.LinkError.occupied) {
+            try CommandLineToolInstaller.createLink(at: link, to: tool, replacingExisting: false)
+        }
+        try CommandLineToolInstaller.createLink(at: link, to: tool, replacingExisting: true)
+        #expect(CommandLineToolInstaller.isLauncherLink(link))
+    }
+
+    @Test func quotesManualCommand() {
+        let command = CommandLineToolInstaller.manualCommand(
+            directory: URL(filePath: "/usr/local/bin"), tool: URL(filePath: "/Applications/It's.app/Contents/SharedSupport/bin/mdb"))
+        #expect(
+            command
+                == "sudo mkdir -p '/usr/local/bin' && sudo ln -sf '/Applications/It'\\''s.app/Contents/SharedSupport/bin/mdb' '/usr/local/bin/mdb'"
+        )
+    }
+}
+
 @Suite struct FileKindTests {
     @Test(arguments: [
         ("README.md", FileKind.markdown), ("notes.markdown", .markdown), ("a.swift", .text), ("data.json", .text),

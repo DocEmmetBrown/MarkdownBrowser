@@ -28,6 +28,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 enum AppSettings {
     static let autosaveOnFocusLossKey = "autosaveOnFocusLoss"
     static let appearanceKey = "appearance"
+    static let commandLineToolOfferedKey = "commandLineToolOffered"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
