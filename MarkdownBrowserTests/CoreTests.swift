@@ -109,6 +109,54 @@ import Testing
     }
 }
 
+@Suite struct FileTreeTests {
+    private func makeFolder(_ names: [String: Bool]) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for (name, isDirectory) in names {
+            let url = root.appending(path: name)
+            if isDirectory {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            } else {
+                try Data().write(to: url)
+            }
+        }
+        return root
+    }
+
+    @Test func sortsFilesAndFoldersTogetherByName() throws {
+        let root = try makeFolder([
+            "echo10.md": false, "Beta": true, "alpha.md": false, "delta": true, "Charlie.md": false, "echo9.md": false,
+            ".hidden": false, "node_modules": true,
+        ])
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(
+            FileNode.entries(in: root).map(\.name) == ["alpha.md", "Beta", "Charlie.md", "delta", "echo9.md", "echo10.md"])
+    }
+
+    @Test func sharesOneTreePerFolderAndReusesNodes() throws {
+        let root = try makeFolder(["a.md": false, "docs": true])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let tree = FileTree.acquire(root)
+        let other = FileTree.acquire(root)
+        #expect(tree === other)
+
+        let docs = try #require(tree.root.child(named: "docs"))
+        try Data().write(to: root.appending(path: "b.md"))
+        tree.root.reloadChildren()
+        #expect(tree.root.child(named: "docs") === docs)
+        #expect(tree.root.children?.map(\.name) == ["a.md", "b.md", "docs"])
+        #expect(tree.loadedNode(for: root.appending(path: "docs")) === docs)
+        #expect(docs.url == root.appending(path: "docs").normalizedFileURL)
+
+        other.release()
+        tree.release()
+        let reopened = FileTree.acquire(root)
+        #expect(reopened !== tree)
+        reopened.release()
+    }
+}
+
 @Suite struct FileKindTests {
     @Test(arguments: [
         ("README.md", FileKind.markdown), ("notes.markdown", .markdown), ("a.swift", .text), ("data.json", .text),
