@@ -97,7 +97,6 @@ The link points into the app, so reinstall it if you move the app.
 - Tables, diagrams and HTML inside blockquotes are shown as source.
 - If the editor's web process crashes, edits since the last save are lost.
 - The find bar uses JavaScript regex syntax; Find in Files uses ICU (`NSRegularExpression`) and matches within a single line.
-- No app icon yet.
 
 ## Project layout
 

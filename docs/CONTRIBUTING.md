@@ -80,6 +80,7 @@ flowchart LR
   - Multi-line blocks belong in `livePreview/blocks.ts` (block widgets must come from a `StateField`).
   - Keep the source revealed when the selection touches it.
 - **New file type**: classify it in `Workspace/FileKind.swift`, then pick a viewer in `Views/DocumentArea.swift`.
+- **App icon**: edit and run `swift scripts/make-icon.swift`, which redraws every size in `Assets.xcassets/AppIcon.appiconset`; commit the PNGs.
 
 ## Testing
 
