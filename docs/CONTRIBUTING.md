@@ -47,6 +47,7 @@ flowchart LR
   - `livePreview/inline.ts` hides Markdown syntax and styles text.
   - `livePreview/blocks.ts` replaces tables, HTML, math and Mermaid blocks with rendered widgets when the cursor isn't inside them.
   - `render/` holds the GitHub-compatible HTML pipeline, Mermaid and KaTeX.
+  - `search/engine.ts` is the find-and-replace logic. The find bar uses it directly; it is also built into `search-engine.js` (`vite.engine.config.ts`), which `SearchEngine` runs in JavaScriptCore for Find in Files, so both match the same way.
 
 ## Rules worth knowing
 
@@ -110,7 +111,7 @@ What the suites cover:
   - task toggles
   - anchors
   - HTML sanitizing
-  - find and replace
+  - find and replace, including parity between the find bar and the Find in Files engine
 
 Some things can only be checked by hand. Open `Samples/` in the app and confirm:
 

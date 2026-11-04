@@ -15,12 +15,13 @@ if ! command -v npm >/dev/null; then
   exit 1
 fi
 
-HASH="$( (find src index.html package-lock.json vite.config.ts -type f -print0 | sort -z | xargs -0 shasum; echo "$OUT") | shasum | cut -d' ' -f1)"
-if [[ -f "$STAMP" && "$(cat "$STAMP")" == "$HASH" && -f "$OUT/index.html" ]]; then
+HASH="$( (find src index.html package-lock.json vite.config.ts vite.engine.config.ts -type f -print0 | sort -z | xargs -0 shasum; echo "$OUT") | shasum | cut -d' ' -f1)"
+if [[ -f "$STAMP" && "$(cat "$STAMP")" == "$HASH" && -f "$OUT/index.html" && -f "$OUT/search-engine.js" ]]; then
   echo "Editor bundle up to date"
   exit 0
 fi
 
 [[ -d node_modules ]] || npm ci --no-audit --no-fund
 npx vite build --outDir "$OUT" --emptyOutDir --logLevel warn
+npx vite build --config vite.engine.config.ts --outDir "$OUT" --logLevel warn
 echo "$HASH" > "$STAMP"

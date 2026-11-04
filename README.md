@@ -11,7 +11,7 @@ A native macOS app for browsing and editing Markdown. Open a file or a whole fol
 - **View Source**: toggle (⌘U) to the plain Markdown, sharing the same undo history.
 - **Links**: ⌘-click to follow. Links to other files open in the app, `#heading` links scroll, web links open in your browser.
 - **Other files**: text and code open as editable source with syntax highlighting; images, videos and everything else use native viewers (Quick Look for the rest).
-- **Find & replace**: a find bar for the current file, and Find in Files across the current file, all open files, or the whole folder. Options for match case, regex, and wrap around; Replace All with confirmation.
+- **Find & replace**: a find bar for the current file, and Find in Files across the current file, all open files, or the whole folder. Options for match case, regex, and wrap around; Replace All with confirmation. Both use JavaScript regex syntax and the same matching code, and patterns can span lines (`foo\nbar`); regex replacements can use `$&`, `$1` and `\n`.
 - **Saving**: ⌘S, or autosave when the window or app loses focus (on by default, can be turned off in Settings). Changes made by other apps are detected and never silently overwritten.
 - **Tabs and windows**: native macOS tabs (⌘T) and multiple windows.
 - **Appearance**: Automatic, Light or Dark.
@@ -95,7 +95,6 @@ The link points into the app, so reinstall it if you move the app.
 - Tables, diagrams and HTML inside blockquotes are shown as source.
 - A footnote definition ends at the first blank line, so multi-paragraph footnotes aren't supported.
 - If the editor's web process crashes, the last second of typing may be lost, along with undo history.
-- The find bar uses JavaScript regex syntax; Find in Files uses ICU (`NSRegularExpression`) and matches within a single line.
 
 ## Project layout
 

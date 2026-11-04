@@ -39,10 +39,12 @@ nonisolated enum SearchSource: Sendable {
 
 nonisolated enum SearchError: Error, LocalizedError {
     case invalidPattern(String)
+    case engineUnavailable
 
     var errorDescription: String? {
         switch self {
-        case .invalidPattern(let message): "Invalid regular expression: \(message)"
+        case .invalidPattern(let message): message
+        case .engineUnavailable: "Search isn't available: the search engine is missing from the app."
         }
     }
 }
@@ -57,14 +59,18 @@ nonisolated enum FolderSearch {
     static let maxFileSize = 5_000_000
     static let maxHits = 2_000
 
-    /// Streams per-file results, matching line by line so hits line up with the editor.
-    static func run(sources: [SearchSource], matcher: Matcher) -> AsyncStream<SearchFileResult> {
+    /// Streams per-file results. Matching runs the editor's search code, so hits line up with the find bar.
+    static func run(sources: [SearchSource], options: SearchOptions) -> AsyncStream<SearchFileResult> {
         AsyncStream { continuation in
             let task = Task.detached(priority: .userInitiated) {
+                guard let engine = try? SearchEngine() else {
+                    continuation.finish()
+                    return
+                }
                 var total = 0
                 for source in sources {
                     if Task.isCancelled || total >= maxHits { break }
-                    let hits = search(source, matcher: matcher, limit: maxHits - total)
+                    let hits = search(source, options: options, engine: engine, limit: maxHits - total)
                     if !hits.isEmpty {
                         total += hits.count
                         continuation.yield(SearchFileResult(url: source.url, hits: hits))
@@ -108,41 +114,41 @@ nonisolated enum FolderSearch {
         }
     }
 
-    static func search(_ source: SearchSource, matcher: Matcher, limit: Int) -> [SearchHit] {
+    static func search(_ source: SearchSource, options: SearchOptions, engine: SearchEngine, limit: Int) -> [SearchHit] {
         guard let (text, separator) = read(source) else { return [] }
-        var hits: [SearchHit] = []
+        let matches = engine.matches(in: text, lineSeparator: separator, options: options, limit: limit)
+        guard !matches.isEmpty else { return [] }
         // Split only on the file's own separator so line numbers match the editor's.
-        for (index, line) in text.components(separatedBy: separator).enumerated() {
-            let nsLine = line as NSString
-            for range in matcher.matches(in: nsLine) {
-                hits.append(makeHit(url: source.url, line: index + 1, text: nsLine, match: range))
-                if hits.count >= limit { return hits }
-            }
+        let lines = text.components(separatedBy: separator)
+        return matches.compactMap { match in
+            guard lines.indices.contains(match.line - 1) else { return nil }
+            let line = lines[match.line - 1] as NSString
+            let column = min(match.column, line.length)
+            // A match spanning lines is highlighted up to the end of its first line.
+            let shown = NSRange(location: column, length: min(match.length, line.length - column))
+            return makeHit(url: source.url, line: match.line, text: line, match: shown, length: match.length)
         }
-        return hits
     }
 
-    /// Replaces every match line by line (the same matches `search` reports), preserving line separators.
-    static func replace(in text: String, lineSeparator: String, matcher: Matcher, template: String) -> (
-        text: String, count: Int
-    ) {
-        var count = 0
-        let lines = text.components(separatedBy: lineSeparator).map { line in
-            let (replaced, n) = matcher.replace(in: line as NSString, template: template)
-            count += n
-            return replaced
-        }
-        return count == 0 ? (text, 0) : (lines.joined(separator: lineSeparator), count)
+    static func replace(
+        in text: String, lineSeparator: String, options: SearchOptions, template: String, engine: SearchEngine
+    ) -> (text: String, count: Int) {
+        engine.replace(in: text, lineSeparator: lineSeparator, options: options, template: template)
     }
 
     /// Rewrites files on disk in their original encoding and line endings.
-    static func replaceInFiles(_ urls: [URL], matcher: Matcher, template: String) -> ReplaceSummary {
+    static func replaceInFiles(_ urls: [URL], options: SearchOptions, template: String) -> ReplaceSummary {
         var summary = ReplaceSummary()
+        guard let engine = try? SearchEngine() else {
+            summary.failures = urls.map(\.lastPathComponent)
+            return summary
+        }
         for url in urls {
             guard let data = try? Data(contentsOf: url) else { continue }
             let decoded = TextCodec.decode(data)
             let (text, count) = replace(
-                in: decoded.text, lineSeparator: decoded.lineSeparator, matcher: matcher, template: template)
+                in: decoded.text, lineSeparator: decoded.lineSeparator, options: options, template: template,
+                engine: engine)
             guard count > 0 else { continue }
             do {
                 try SafeFileWriter.write(TextCodec.encode(text, as: decoded.encoding).0, to: url)
@@ -155,7 +161,7 @@ nonisolated enum FolderSearch {
         return summary
     }
 
-    private static func makeHit(url: URL, line: Int, text: NSString, match: NSRange) -> SearchHit {
+    private static func makeHit(url: URL, line: Int, text: NSString, match: NSRange, length: Int) -> SearchHit {
         let context = 60
         let start = max(0, match.location - context)
         let end = min(text.length, match.location + match.length + 120)
@@ -165,70 +171,8 @@ nonisolated enum FolderSearch {
         let preview = prefix + text.substring(with: NSRange(location: match.location, length: end - match.location))
         let previewMatch = NSRange(location: (prefix as NSString).length, length: match.length)
         return SearchHit(
-            url: url, line: line, column: match.location, length: match.length, preview: preview,
+            url: url, line: line, column: match.location, length: length, preview: preview,
             previewMatch: previewMatch)
-    }
-
-    struct Matcher: Sendable {
-        private let regex: NSRegularExpression?
-        private let options: SearchOptions
-
-        init(_ options: SearchOptions) throws {
-            self.options = options
-            if options.regex {
-                do {
-                    regex = try NSRegularExpression(
-                        pattern: options.query, options: options.caseSensitive ? [] : [.caseInsensitive])
-                } catch {
-                    throw SearchError.invalidPattern(options.query)
-                }
-            } else {
-                regex = nil
-            }
-        }
-
-        func matches(in line: NSString) -> [NSRange] {
-            results(in: line).map(\.range)
-        }
-
-        /// Replaces matches in one line; in regex mode `template` may use `$1`-style group references.
-        func replace(in line: NSString, template: String) -> (String, Int) {
-            let found = results(in: line)
-            guard !found.isEmpty else { return (line as String, 0) }
-            let output = NSMutableString()
-            var cursor = 0
-            for (range, result) in found {
-                output.append(line.substring(with: NSRange(location: cursor, length: range.location - cursor)))
-                if let regex, let result {
-                    output.append(regex.replacementString(for: result, in: line as String, offset: 0, template: template))
-                } else {
-                    output.append(template)
-                }
-                cursor = range.location + range.length
-            }
-            output.append(line.substring(from: cursor))
-            return (output as String, found.count)
-        }
-
-        private func results(in line: NSString) -> [(range: NSRange, result: NSTextCheckingResult?)] {
-            guard !options.query.isEmpty else { return [] }
-            if let regex {
-                return regex.matches(in: line as String, range: NSRange(location: 0, length: line.length))
-                    .filter { $0.range.length > 0 }
-                    .map { ($0.range, $0) }
-            }
-            var ranges: [(NSRange, NSTextCheckingResult?)] = []
-            var searchRange = NSRange(location: 0, length: line.length)
-            let compare: NSString.CompareOptions = options.caseSensitive ? [] : [.caseInsensitive]
-            while searchRange.length > 0 {
-                let found = line.range(of: options.query, options: compare, range: searchRange)
-                guard found.location != NSNotFound, found.length > 0 else { break }
-                ranges.append((found, nil))
-                let next = found.location + found.length
-                searchRange = NSRange(location: next, length: line.length - next)
-            }
-            return ranges
-        }
     }
 }
 

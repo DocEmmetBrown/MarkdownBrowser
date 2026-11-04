@@ -5,7 +5,6 @@ import {
   closeSearchPanel,
   getSearchQuery,
   openSearchPanel,
-  replaceAll,
   replaceNext,
   search,
   searchPanelOpen,
@@ -13,6 +12,7 @@ import {
   setSearchQuery,
 } from "@codemirror/search"
 import { setRevealSelection } from "./livePreview/state"
+import { replacementChanges } from "./search/engine"
 
 export interface FindOptions {
   search: string
@@ -138,12 +138,13 @@ export function replaceCurrent(view: EditorView, wrap: boolean): FindStatus {
   return findStatus(view.state, { wrapped: after.from < from, atEnd: false })
 }
 
+/** Replaces the same non-empty matches Find in Files would, as one undoable change. */
 export function replaceAllMatches(view: EditorView): number {
   const query = getSearchQuery(view.state)
   if (!query.valid || !query.search) return 0
-  const count = allMatches(view.state, query).length
-  replaceAll(view)
-  return count
+  const changes = replacementChanges(view.state.doc, query, query.replace, view.state.lineBreak)
+  if (changes.length > 0) view.dispatch({ changes, userEvent: "input.replace.all" })
+  return changes.length
 }
 
 export function selectAllMatches(view: EditorView): FindStatus {
