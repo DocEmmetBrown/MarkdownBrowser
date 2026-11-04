@@ -25,7 +25,7 @@ import Testing
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 400), styleMask: [], backing: .buffered, defer: false)
         window.contentView = NSHostingView(rootView: FileTreeView(workspace: workspace))
         window.layoutIfNeeded()
-        let outline = try #require(outline(in: window.contentView!))
+        let outline = try #require(self.outline(in: window.contentView!))
         #expect(names(outline) == ["A.md", "b.md", "docs"])
 
         await workspace.open(root.appending(path: "docs/guide.md"))
@@ -50,7 +50,7 @@ import Testing
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 400), styleMask: [], backing: .buffered, defer: false)
         window.contentView = NSHostingView(rootView: FileTreeView(workspace: workspace))
         window.layoutIfNeeded()
-        let outline = try #require(outline(in: window.contentView!))
+        let outline = try #require(self.outline(in: window.contentView!))
         let docs = try #require(outline.item(atRow: 0) as? FileNode)
         #expect(docs.children == nil)
 
