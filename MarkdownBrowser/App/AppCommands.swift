@@ -60,6 +60,9 @@ struct AppCommands: Commands {
                 .keyboardShortcut("[")
             Button("Forward") { windows.activeController?.goForward() }
                 .keyboardShortcut("]")
+            Divider()
+            Button("Enclosing Folder") { windows.activeController?.goUp() }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
         }
     }
 }

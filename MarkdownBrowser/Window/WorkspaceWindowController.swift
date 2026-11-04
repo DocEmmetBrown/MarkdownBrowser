@@ -144,6 +144,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
         Task { await workspace.goForward() }
     }
 
+    func goUp() {
+        guard let workspace else { return }
+        Task { await workspace.goUp() }
+    }
+
     func toggleSourceMode() {
         workspace?.toggleSourceMode()
     }

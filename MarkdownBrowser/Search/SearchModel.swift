@@ -31,7 +31,7 @@ final class SearchModel {
     private(set) var currentHitID: SearchHit.ID?
     var focusRequest = 0
 
-    let root: URL?
+    private(set) var root: URL?
     var availableScopes: [SearchScope] { root == nil ? [.currentFile, .openFiles] : SearchScope.allCases }
     var hitCount: Int { results.reduce(0) { $0 + $1.hits.count } }
     var hits: [SearchHit] { results.flatMap(\.hits) }
@@ -44,6 +44,12 @@ final class SearchModel {
     init(root: URL?) {
         self.root = root
         scope = root == nil ? .currentFile : .folder
+    }
+
+    /// Points folder searches at another folder; earlier results stay until the next search.
+    func setRoot(_ url: URL) {
+        guard root != nil else { return }
+        root = url
     }
 
     func run() {
