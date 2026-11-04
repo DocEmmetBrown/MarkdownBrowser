@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppSettings.registerDefaults()
         AppSettings.applyAppearance()
         NSWindow.allowsAutomaticWindowTabbing = true
+        TabDoubleClickMonitor.install()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

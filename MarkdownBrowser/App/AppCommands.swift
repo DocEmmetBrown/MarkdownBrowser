@@ -31,6 +31,11 @@ struct AppCommands: Commands {
                 .keyboardShortcut("u")
         }
 
+        CommandGroup(before: .windowArrangement) {
+            Button("Keep Tab Open") { windows.activeController?.pin() }
+                .keyboardShortcut("k", modifiers: [.command, .option])
+        }
+
         CommandGroup(replacing: .textEditing) {
             Menu("Find") {
                 Button("Find…") { windows.activeController?.showFind(replace: false) }

@@ -37,8 +37,12 @@ struct FileTreeView: View {
                 tree: tree, selection: workspace.selection, expanded: workspace.expanded, workspace: workspace
             ) { url, activation in
                 switch activation {
-                case .open:
-                    await workspace.open(url)
+                case .open, .pin:
+                    if let delegate = workspace.delegate {
+                        await delegate.workspace(workspace, showFromSidebar: url, hit: nil, pin: activation == .pin)
+                    } else {
+                        await workspace.open(url)
+                    }
                 case .openInNewTab:
                     workspace.delegate?.workspace(workspace, openInNewTab: url, anchor: nil)
                 }
