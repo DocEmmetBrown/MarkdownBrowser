@@ -44,6 +44,7 @@ private final class AccessDenier: WorkspaceDelegate {
         #expect(workspace.rootURL == docs)
         #expect(workspace.title == "docs")
         #expect(workspace.search.root == docs)
+        #expect(workspace.filter.root == docs)
         #expect(names(workspace.root) == ["deep", "guide.md"])
         #expect(workspace.parentURL == root.normalizedFileURL)
 
@@ -51,6 +52,7 @@ private final class AccessDenier: WorkspaceDelegate {
         #expect(workspace.rootURL == root.normalizedFileURL)
         #expect(names(workspace.root) == ["docs", "README.md"])
         #expect(workspace.search.root == root.normalizedFileURL)
+        #expect(workspace.filter.root == root.normalizedFileURL)
         // The folder we came from stays open.
         #expect(workspace.expanded.contains(docs))
     }

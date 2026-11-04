@@ -157,6 +157,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
         workspace?.showSearchInFiles()
     }
 
+    func showFilter() {
+        workspace?.showFilter()
+    }
+
     func showFind(replace: Bool) {
         workspace?.showFind(replace: replace)
     }
