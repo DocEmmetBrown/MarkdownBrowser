@@ -122,6 +122,16 @@ Some things can only be checked by hand. Open `Samples/` in the app and confirm:
 
 When you fix a bug, add a test that fails without the fix.
 
+## Releasing
+
+Push a version tag; the `release` workflow tests, builds and attaches `MarkdownBrowser-<version>.zip` and its SHA-256 to a GitHub release (tags with a `-suffix` become pre-releases):
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+To build the same zip locally, run `scripts/build-release.sh 0.2.0` (output in `dist/`, `SKIP_TESTS=1` to skip the tests). Builds are signed ad hoc unless `DEVELOPER_ID_APPLICATION` is set; notarization also needs `NOTARY_PROFILE` (from `xcrun notarytool store-credentials`) or `NOTARY_KEY_PATH`, `NOTARY_KEY_ID` and `NOTARY_ISSUER`. The workflow doesn't set these yet.
+
 ## Submitting changes
 
 - Keep changes focused; separate refactors from behavior changes.

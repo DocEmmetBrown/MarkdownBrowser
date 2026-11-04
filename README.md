@@ -17,6 +17,16 @@ A native macOS app for browsing and editing Markdown. Open a file or a whole fol
 - **Appearance**: Automatic, Light or Dark.
 - **Command line**: `mdb` opens the current directory or any path, like Sublime Text's `subl`.
 
+## Installing
+
+Download the zip from the [latest release](https://github.com/DocEmmetBrown/MarkdownBrowser/releases/latest), unzip it and move **MarkdownBrowser.app** to `/Applications`.
+
+Release builds aren't signed with a Developer ID yet, so macOS blocks the first launch. Right-click the app and choose **Open**, or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/MarkdownBrowser.app
+```
+
 ## Requirements
 
 | To run | To build |

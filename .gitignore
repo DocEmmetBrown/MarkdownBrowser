@@ -1,6 +1,7 @@
 .DS_Store
 *.xcodeproj/
 build/
+dist/
 DerivedData/
 xcuserdata/
 web/node_modules/
