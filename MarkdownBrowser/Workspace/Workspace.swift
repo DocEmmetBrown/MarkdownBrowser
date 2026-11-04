@@ -30,6 +30,7 @@ final class Workspace {
     let isFolder: Bool
     let tree: FileTree?
     let search: SearchModel
+    let filter: SidebarFilterModel
     let find = FindBarModel()
 
     var root: FileNode? { tree?.root }
@@ -50,6 +51,8 @@ final class Workspace {
     @ObservationIgnored weak var delegate: WorkspaceDelegate?
     /// Sidebar scroll position, carried over to tabs opened from the sidebar.
     @ObservationIgnored var sidebarScrollOffset: CGFloat = 0
+    /// A folder the file tree should scroll to once it's shown again, e.g. after choosing it in the filter results.
+    @ObservationIgnored var pendingReveal: URL?
     @ObservationIgnored private var scopes: [SecurityScope] = []
     @ObservationIgnored private var accessRoots: [URL] = []
     @ObservationIgnored private var nextDocumentId = 1
@@ -68,11 +71,13 @@ final class Workspace {
 
         tree = isFolder ? FileTree.acquire(url) : nil
         search = SearchModel(root: isFolder ? url : nil)
+        filter = SidebarFilterModel(root: isFolder ? url : nil)
         isSidebarVisible = isFolder
         sidebarMode = isFolder ? .files : .search
 
         configureEditor()
         configureSearch()
+        filter.visibleDirectories = { [weak self] in self?.visibleDirectories() ?? [] }
     }
 
     private func configureSearch() {
@@ -324,6 +329,13 @@ final class Workspace {
         search.focusRequest += 1
     }
 
+    func showFilter() {
+        guard isFolder else { return }
+        isSidebarVisible = true
+        sidebarMode = .files
+        filter.focusRequested = true
+    }
+
     /// Opens a search hit like a sidebar click when this workspace can reach it, otherwise in the window that has it.
     func reveal(_ hit: SearchHit) async {
         if canAccess(hit.url) {
@@ -345,6 +357,7 @@ final class Workspace {
         isSidebarVisible = other.isSidebarVisible
         sidebarScrollOffset = other.sidebarScrollOffset
         search.adopt(other.search)
+        filter.adopt(other.filter)
     }
 
     // MARK: Editing
@@ -369,6 +382,7 @@ final class Workspace {
         document?.stopWatching()
         tree?.release()
         search.cancel()
+        filter.cancel()
         scopes.forEach { $0.stop() }
         scopes.removeAll()
     }
@@ -391,6 +405,20 @@ final class Workspace {
     /// The sidebar node for `url`, if its folder has been listed.
     func node(for url: URL) -> FileNode? {
         tree?.loadedNode(for: url)
+    }
+
+    /// The root folder and the expanded folders reachable through expanded folders: the levels the tree shows.
+    func visibleDirectories() -> [URL] {
+        guard let root else { return [] }
+        var directories = [root.url]
+        var pending = [root]
+        while let node = pending.popLast() {
+            for child in node.children ?? [] where child.isDirectory && expanded.contains(child.url) {
+                directories.append(child.url)
+                pending.append(child)
+            }
+        }
+        return directories
     }
 
     private func revealInSidebar(_ url: URL, expandingTarget: Bool) {

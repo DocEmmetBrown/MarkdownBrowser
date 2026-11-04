@@ -60,6 +60,9 @@ struct AppCommands: Commands {
                 .keyboardShortcut("[")
             Button("Forward") { windows.activeController?.goForward() }
                 .keyboardShortcut("]")
+            Divider()
+            Button("Filter Files…") { windows.activeController?.showFilter() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
         }
     }
 }

@@ -55,11 +55,12 @@ struct FileOutlineView: NSViewRepresentable {
             name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         // A tab opened from another tab's sidebar starts where that sidebar was scrolled.
         let offset = workspace.sidebarScrollOffset
-        if offset > 0 {
-            DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak coordinator = context.coordinator] in
+            if offset > 0 {
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: offset))
                 scroll.reflectScrolledClipView(scroll.contentView)
             }
+            coordinator?.revealPendingFolder()
         }
         return scroll
     }
@@ -112,7 +113,8 @@ struct FileOutlineView: NSViewRepresentable {
             let identifier = NSUserInterfaceItemIdentifier("FileCell")
             let cell = outlineView.makeView(withIdentifier: identifier, owner: nil) as? NSTableCellView ?? makeCell(identifier)
             cell.textField?.stringValue = node.name
-            cell.imageView?.image = NSImage(systemSymbolName: Self.symbol(for: node), accessibilityDescription: nil)
+            cell.imageView?.image = NSImage(
+                systemSymbolName: Self.symbol(isDirectory: node.isDirectory, kind: node.kind), accessibilityDescription: nil)
             return cell
         }
 
@@ -219,6 +221,19 @@ struct FileOutlineView: NSViewRepresentable {
             isSyncing = wasSyncing
         }
 
+        /// Scrolls to and selects the folder chosen in the filter results, once the outline has expanded to it.
+        func revealPendingFolder() {
+            guard let outline, let workspace = parent?.workspace, let url = workspace.pendingReveal else { return }
+            workspace.pendingReveal = nil
+            guard let node = workspace.node(for: url) else { return }
+            let row = outline.row(forItem: node)
+            guard row >= 0 else { return }
+            applying {
+                outline.selectRowIndexes([row], byExtendingSelection: false)
+                outline.scrollRowToVisible(row)
+            }
+        }
+
         private func expand(_ expanded: Set<URL>) {
             guard let outline, let workspace = parent?.workspace else { return }
             // Parents before children, so each folder's row exists when it's expanded.
@@ -274,9 +289,9 @@ struct FileOutlineView: NSViewRepresentable {
             return cell
         }
 
-        private static func symbol(for node: FileNode) -> String {
-            if node.isDirectory { return "folder" }
-            switch node.kind {
+        static func symbol(isDirectory: Bool, kind: FileKind) -> String {
+            if isDirectory { return "folder" }
+            switch kind {
             case .markdown: return "doc.richtext"
             case .text: return "doc.plaintext"
             case .image: return "photo"
