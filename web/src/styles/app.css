@@ -298,6 +298,21 @@ body.markdown-body {
   font-family: var(--fontStack-monospace);
 }
 
+.cm-md-footnote-ref {
+  font-size: 75%;
+  line-height: 0;
+}
+
+.cm-md-footnote {
+  color: var(--fgColor-muted);
+  font-size: 85%;
+}
+
+.cm-md-footnote-label {
+  display: inline-block;
+  min-width: 1.6em;
+}
+
 .cm-md-flash {
   background-color: var(--bgColor-attention-muted);
   border-radius: 2px;

@@ -5,7 +5,7 @@ A native macOS app for browsing and editing Markdown. Open a file or a whole fol
 ## Features
 
 - **Browse files and folders**: open a single file or a folder; folders get a sidebar file tree that updates when files change on disk, and open on their README.
-- **GitHub-style rendering**: GitHub's stylesheet and colors; tables, task lists, `> [!NOTE]` alerts, math (`$…$`, `$$…$$`), raw HTML (sanitized), images, and syntax-highlighted code.
+- **GitHub-style rendering**: GitHub's stylesheet and colors; tables, task lists, `> [!NOTE]` alerts, footnotes, `:emoji:` shortcodes, math (`$…$`, `$$…$$`), raw HTML (sanitized, including `<details>` wrapping Markdown), images, and syntax-highlighted code.
 - **Mermaid diagrams**: ```` ```mermaid ```` blocks render as diagrams and switch theme with light/dark mode.
 - **Edit in the rendered view**: click anywhere to edit; the Markdown syntax appears only where the cursor is. Edits change exactly the characters you type: line endings, encoding and formatting elsewhere are preserved byte for byte.
 - **View Source**: toggle (⌘U) to the plain Markdown, sharing the same undo history.
@@ -92,9 +92,8 @@ The link points into the app, so reinstall it if you move the app.
 
 ## Known limitations
 
-- Footnotes and emoji shortcodes (`:smile:`) are not rendered yet.
-- An HTML block containing blank lines (e.g. `<details>` wrapping Markdown) renders as separate pieces.
 - Tables, diagrams and HTML inside blockquotes are shown as source.
+- A footnote definition ends at the first blank line, so multi-paragraph footnotes aren't supported.
 - If the editor's web process crashes, edits since the last save are lost.
 - The find bar uses JavaScript regex syntax; Find in Files uses ICU (`NSRegularExpression`) and matches within a single line.
 

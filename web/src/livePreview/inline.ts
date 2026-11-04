@@ -2,10 +2,21 @@ import type { EditorState, Range } from "@codemirror/state"
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view"
 import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common"
-import { blockKind, blockSpan } from "./blocks"
+import { blockKind, blockSpan, htmlBlockEnd } from "./blocks"
 import { linesTouch, selectionTouches, setRevealSelection } from "./state"
-import { AlertTitleWidget, BulletWidget, ImageWidget, InlineMathWidget, TaskWidget } from "./widgets"
+import {
+  AlertTitleWidget,
+  BulletWidget,
+  EmojiWidget,
+  FootnoteLabelWidget,
+  FootnoteRefWidget,
+  ImageWidget,
+  InlineMathWidget,
+  TaskWidget,
+} from "./widgets"
 import { linkDefinitions, linkTarget } from "../markdownLinks"
+import { footnoteAnchor, footnoteKey, footnotes, type Footnotes } from "../footnotes"
+import { emojiFor } from "../syntax/emoji"
 
 const hidden = Decoration.replace({})
 const lineClasses = new Map<string, Decoration>()
@@ -24,9 +35,15 @@ class Builder {
   private readonly codeLines = new Set<number>()
   private readonly replacedLines = new Set<number>()
   private readonly definitions: Map<string, string>
+  private readonly notes: Footnotes
+  /** End of the last rendered block; nodes before it are hidden by the block widget. */
+  private renderedTo = -1
+  /** End of a merged HTML block shown as source, so its closing tag shows as source too. */
+  private sourceTo = -1
 
   constructor(private readonly state: EditorState) {
     this.definitions = linkDefinitions(state)
+    this.notes = footnotes(state)
   }
 
   build(from: number, to: number): void {
@@ -61,11 +78,18 @@ class Builder {
     const doc = state.doc
     const node = ref.node
     const name = ref.name
+    if (ref.from < this.renderedTo) return false
 
     const kind = blockKind(state, ref)
     if (kind) {
-      const span = blockSpan(state, ref.from, ref.to)
-      if (!linesTouch(state, span.lineFrom, span.lineTo)) return false
+      const end = kind === "html" ? htmlBlockEnd(state, ref) : ref.to
+      const span = blockSpan(state, ref.from, end)
+      const asSource = (kind === "html" && ref.from < this.sourceTo) || linesTouch(state, span.lineFrom, span.lineTo)
+      if (!asSource) {
+        this.renderedTo = end
+        return false
+      }
+      if (kind === "html") this.sourceTo = Math.max(this.sourceTo, end)
       if (kind !== "table") return this.codeBlock(node)
       return true
     }
@@ -247,6 +271,39 @@ class Builder {
       }
       case "LinkReference": {
         this.ranges.push(lineClass("cm-md-linkdef").range(doc.lineAt(ref.from).from))
+        return false
+      }
+      case "FootnoteReference": {
+        const label = node.getChild("FootnoteLabel")
+        const key = label ? footnoteKey(doc.sliceString(label.from, label.to)) : ""
+        const number = this.notes.numbers.get(key)
+        if (number === undefined || this.touches(ref.from, ref.to)) return false
+        this.ranges.push(
+          Decoration.replace({ widget: new FootnoteRefWidget(number, footnoteAnchor(key)) }).range(ref.from, ref.to),
+        )
+        return false
+      }
+      case "FootnoteDefinition": {
+        const last = doc.lineAt(ref.to).number
+        for (let n = doc.lineAt(ref.from).number; n <= last; n++) {
+          this.ranges.push(lineClass("cm-md-footnote").range(doc.line(n).from))
+        }
+        const mark = node.getChild("FootnoteDefinitionMark")
+        const label = mark?.getChild("FootnoteLabel")
+        const number = label ? this.notes.numbers.get(footnoteKey(doc.sliceString(label.from, label.to))) : undefined
+        if (mark && number !== undefined && !this.lineActive(ref.from)) {
+          const end = doc.sliceString(mark.to, mark.to + 1) === " " ? mark.to + 1 : mark.to
+          this.ranges.push(Decoration.replace({ widget: new FootnoteLabelWidget(number) }).range(mark.from, end))
+        }
+        return true
+      }
+      case "FootnoteDefinitionMark":
+        return false
+      case "Emoji": {
+        const emoji = emojiFor(doc.sliceString(ref.from + 1, ref.to - 1))
+        if (emoji && !this.touches(ref.from, ref.to)) {
+          this.ranges.push(Decoration.replace({ widget: new EmojiWidget(emoji) }).range(ref.from, ref.to))
+        }
         return false
       }
     }

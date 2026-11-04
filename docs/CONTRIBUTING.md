@@ -106,6 +106,7 @@ What the suites cover:
 - **Editor**:
   - byte-exact round trips
   - live-preview rendering
+  - footnotes, emoji shortcodes and HTML blocks split by blank lines
   - task toggles
   - anchors
   - HTML sanitizing

@@ -1,6 +1,7 @@
 import type { EditorState } from "@codemirror/state"
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language"
 import { Slugger, headingPlainText } from "./render/slug"
+import { footnoteKey, footnotes } from "./footnotes"
 
 const headingContainers = new Set(["Document", "Blockquote", "BulletList", "OrderedList", "ListItem"])
 
@@ -20,6 +21,12 @@ export function findAnchor(state: EditorState, fragment: string): number | null 
   const lowered = target.toLowerCase()
 
   const tree = ensureSyntaxTree(state, state.doc.length, 500) ?? syntaxTree(state)
+  const footnote = /^fn(ref)?-(.+)$/.exec(target)
+  if (footnote) {
+    const { definitions, firstReferences } = footnotes(state)
+    const pos = (footnote[1] ? firstReferences : definitions).get(footnoteKey(footnote[2]))
+    if (pos !== undefined) return pos
+  }
   const slugger = new Slugger()
   let found: number | null = null
   tree.iterate({
