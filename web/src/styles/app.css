@@ -98,6 +98,8 @@ body.markdown-body {
 .cm-live .cm-content {
   /* Set from the app's Page settings (setPageLayout); no margins by default. */
   max-width: var(--mdb-page-max-width, none);
+  /* A flex item can't shrink below its min-content width; a wide table or `<pre>` would otherwise stop everything wrapping at the window's width. */
+  min-width: 0;
   margin: 0 auto;
   padding: var(--mdb-page-margin-top, 12px) var(--mdb-page-margin, 12px) 40vh;
   box-sizing: border-box;
