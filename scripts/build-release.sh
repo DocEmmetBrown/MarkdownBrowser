@@ -22,7 +22,17 @@ ZIP="MarkdownBrowser-$VERSION.zip"
 
 xcodegen generate --quiet
 if [[ "${SKIP_TESTS:-0}" != 1 ]]; then
-  xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build -quiet test
+  RESULTS="build/tests-$BUILD_NUMBER-$$.xcresult"
+  if xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build \
+    -resultBundlePath "$RESULTS" -quiet test; then
+    :
+  else
+    STATUS=$?
+    if [[ -d "$RESULTS" ]]; then
+      xcrun xcresulttool get test-results summary --path "$RESULTS"
+    fi
+    exit "$STATUS"
+  fi
 fi
 
 rm -rf "$DERIVED"
