@@ -16,6 +16,7 @@ final class EditorHost: NSObject, DocumentEditor {
     private var pendingLoad: [String: Any]?
     private weak var loadedDocument: OpenDocument?
     private var loadedRootURL: URL?
+    private var wrapsLines = AppSettings.wrapLongLines
     private let logger = Logger(subsystem: "MarkdownBrowser", category: "Editor")
 
     override init() {
@@ -37,6 +38,17 @@ final class EditorHost: NSObject, DocumentEditor {
             webView.isInspectable = true
         #endif
         webView.load(URLRequest(url: LocalResourceSchemeHandler.editorURL))
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(defaultsChanged), name: UserDefaults.didChangeNotification, object: nil)
+    }
+
+    /// Applies the Wrap Long Lines setting, changed from the Edit menu or Settings, to the open document.
+    @objc private func defaultsChanged() {
+        let on = AppSettings.wrapLongLines
+        guard on != wrapsLines else { return }
+        wrapsLines = on
+        pendingLoad?["wrapLines"] = on
+        run("window.mdb.setLineWrapping(on)", ["on": on])
     }
 
     func load(_ document: OpenDocument, rootURL: URL?, anchor: String?) {
@@ -62,6 +74,7 @@ final class EditorHost: NSObject, DocumentEditor {
             "baseURL": LocalResourceSchemeHandler.schemeURL(for: document.url).absoluteString,
             "rootURL": rootURL.map { LocalResourceSchemeHandler.schemeURL(for: $0).absoluteString } ?? NSNull(),
             "sourceMode": document.sourceMode,
+            "wrapLines": AppSettings.wrapLongLines,
             "anchor": anchor ?? NSNull(),
         ]
     }

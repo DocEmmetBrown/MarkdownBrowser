@@ -29,12 +29,18 @@ enum AppSettings {
     static let autosaveOnFocusLossKey = "autosaveOnFocusLoss"
     static let appearanceKey = "appearance"
     static let commandLineToolOfferedKey = "commandLineToolOffered"
+    static let wrapLongLinesKey = "wrapLongLines"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             autosaveOnFocusLossKey: true,
             appearanceKey: AppearanceMode.system.rawValue,
+            wrapLongLinesKey: true,
         ])
+    }
+
+    static var wrapLongLines: Bool {
+        UserDefaults.standard.bool(forKey: wrapLongLinesKey)
     }
 
     static var autosaveOnFocusLoss: Bool {

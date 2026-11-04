@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 
@@ -74,6 +75,12 @@ import Testing
         #expect(AppearanceMode.system.nsAppearance == nil)
         #expect(AppearanceMode.light.nsAppearance?.name == .aqua)
         #expect(AppearanceMode.dark.nsAppearance?.name == .darkAqua)
+    }
+
+    @Test func editMenuOffersLineWrapping() throws {
+        let edit = try #require(NSApp.mainMenu?.items.first { $0.title == "Edit" }?.submenu)
+        let item = try #require(edit.items.first { $0.title == "Wrap Long Lines" })
+        #expect(item.state == (AppSettings.wrapLongLines ? .on : .off))
     }
 }
 

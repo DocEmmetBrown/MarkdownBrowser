@@ -108,4 +108,17 @@ describe("live preview", () => {
     expect(after.text.endsWith("tail\n")).toBe(true)
     expect(after.dirty).toBe(false)
   })
+
+  it("wraps long lines unless turned off, for any kind of document", () => {
+    const wraps = () => api.view.contentDOM.classList.contains("cm-lineWrapping")
+    const base = { docId: 2, lineSeparator: "\n", baseURL: "mdb-file://local/tmp/a.txt", rootURL: null, sourceMode: false }
+    api.load({ ...base, text: "x".repeat(500), kind: "text", fileName: "a.txt" })
+    expect(wraps()).toBe(true)
+    api.setLineWrapping(false)
+    expect(wraps()).toBe(false)
+    api.load({ ...base, text: "# a", kind: "markdown", fileName: "a.md", wrapLines: false })
+    expect(wraps()).toBe(false)
+    api.setLineWrapping(true)
+    expect(wraps()).toBe(true)
+  })
 })

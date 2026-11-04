@@ -51,6 +51,8 @@ export interface LoadArgs {
   anchor?: string | null
   /** Unsaved text to show instead of `text` (the saved version), e.g. after the web process restarted. */
   current?: string | null
+  /** Soft-wrap long lines (the app's "Wrap Long Lines" setting); on when omitted. */
+  wrapLines?: boolean
 }
 
 export interface Snapshot {
@@ -71,6 +73,7 @@ export function createEditor(parent: HTMLElement) {
   let docId = 0
   let kind: DocumentKind = "markdown"
   let sourceMode = false
+  let wrapLines = true
   let savedDoc: Text = Text.empty
   let reportedDirty = false
   let applyingExternalChange = false
@@ -140,7 +143,7 @@ export function createEditor(parent: HTMLElement) {
           findStatusUpdate = setTimeout(() => reportFind(), 150)
         }
       }),
-      wrapping.of(args.kind === "markdown" ? EditorView.lineWrapping : []),
+      wrapping.of(wrapLines ? EditorView.lineWrapping : []),
       language.of(args.kind === "markdown" ? markdownSupport() : []),
       mode.of(modeExtensions()),
     ]
@@ -166,6 +169,7 @@ export function createEditor(parent: HTMLElement) {
     docId = args.docId
     kind = args.kind
     sourceMode = args.sourceMode
+    wrapLines = args.wrapLines ?? true
     snapshots.clear()
     const state = EditorState.create({ doc: args.current ?? args.text, extensions: commonExtensions(args) })
     savedDoc = args.current == null ? state.doc : state.toText(args.text)
@@ -195,6 +199,12 @@ export function createEditor(parent: HTMLElement) {
       if (sourceMode === on) return
       sourceMode = on
       view.dispatch({ effects: mode.reconfigure(modeExtensions()) })
+    },
+
+    setLineWrapping(on: boolean): void {
+      if (wrapLines === on) return
+      wrapLines = on
+      view.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) })
     },
 
     snapshot(id: number): Snapshot | null {
