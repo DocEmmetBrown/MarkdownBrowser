@@ -58,7 +58,9 @@ import Testing
         // Double-clicking the preview's tab keeps it. Only the selected tab's window shows the tab bar.
         let window = try #require(first.window?.tabGroup?.selectedWindow)
         try await waitUntil { window.tabGroup?.isTabBarVisible == true }
+        window.layoutIfNeeded()
         let frame = try #require(window.contentView?.superview)
+        frame.layoutSubtreeIfNeeded()
         let buttons = tabButtons(in: frame).sorted { $0.frame.minX < $1.frame.minX }
         try #require(buttons.count == 2, "found \(buttons.count) tab buttons")
         let center = buttons[1].convert(NSPoint(x: buttons[1].bounds.midX, y: buttons[1].bounds.midY), to: nil)
@@ -66,7 +68,11 @@ import Testing
             NSEvent.mouseEvent(
                 with: .leftMouseDown, location: center, modifierFlags: [], timestamp: 0,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1))
-        #expect(TabDoubleClickMonitor.tabController(at: click) === second)
+        #expect(
+            TabDoubleClickMonitor.tabController(at: click) === second,
+            "window: \(String(describing: click.window)), frame: \(frame.frame), "
+                + "buttons: \(buttons.map(\.frame)), click: \(center), "
+                + "hit: \(String(describing: frame.hitTest(center)))")
 
         // A file that's already open just selects its tab.
         await second.showFromSidebar(file("a.md"), hit: nil, pin: false)
