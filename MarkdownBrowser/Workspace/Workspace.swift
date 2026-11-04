@@ -26,9 +26,10 @@ extension URL {
 /// One window's (or tab's) browsing session over a folder or a single file.
 @Observable
 final class Workspace {
-    let rootURL: URL
+    /// The folder shown in the sidebar (or the single file); changes when navigating into or out of folders.
+    private(set) var rootURL: URL
     let isFolder: Bool
-    let tree: FileTree?
+    private(set) var tree: FileTree?
     let search: SearchModel
     let filter: SidebarFilterModel
     let find = FindBarModel()
@@ -388,6 +389,66 @@ final class Workspace {
     }
 
     // MARK: Sidebar
+
+    /// The enclosing folder, or nil at the top of the file system and for single files.
+    var parentURL: URL? {
+        guard isFolder else { return nil }
+        let parent = rootURL.deletingLastPathComponent().normalizedFileURL
+        return parent == rootURL ? nil : parent
+    }
+
+    /// Enclosing folders, nearest first.
+    var ancestors: [URL] {
+        var result: [URL] = []
+        var url = parentURL
+        while let current = url {
+            result.append(current)
+            url = current.deletingLastPathComponent().normalizedFileURL
+            if url == current { break }
+        }
+        return result
+    }
+
+    /// Makes `folder` the sidebar's root: a subfolder opened by double-click, or an enclosing one. Going above the
+    /// folder the app was granted asks for access to it first.
+    @discardableResult
+    func setRoot(_ folder: URL) async -> Bool {
+        let folder = folder.normalizedFileURL
+        guard isFolder, folder != rootURL else { return false }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else {
+            openError = "“\(folder.lastPathComponent)” couldn't be found."
+            return false
+        }
+        if !canAccess(folder) {
+            guard let granted = await delegate?.workspace(self, requestAccessTo: folder) else { return false }
+            grantAccess(to: granted)
+            guard canAccess(folder) else { return false }
+        }
+        // Another navigation may have finished while the access prompt was open.
+        guard folder != rootURL else { return false }
+
+        let previous = rootURL
+        tree?.release()
+        rootURL = folder
+        tree = FileTree.acquire(folder)
+        search.setRoot(folder)
+        filter.setRoot(folder)
+        // Going up keeps the folder we came from open.
+        if PathPolicy.isWithin(previous, roots: [folder]) { expanded.insert(previous) }
+        sidebarScrollOffset = 0
+        openError = nil
+        if let selection { revealInSidebar(selection, expandingTarget: false) }
+        return true
+    }
+
+    func goUp() async {
+        guard let parent = parentURL else { return }
+        await setRoot(parent)
+    }
 
     func isExpanded(_ node: FileNode) -> Bool {
         expanded.contains(node.url)

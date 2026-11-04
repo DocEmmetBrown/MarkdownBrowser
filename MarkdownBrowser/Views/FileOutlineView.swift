@@ -163,8 +163,17 @@ struct FileOutlineView: NSViewRepresentable {
 
         @objc func doubleClicked(_ sender: NSOutlineView) {
             let row = sender.clickedRow
-            guard row >= 0, let node = sender.item(atRow: row) as? FileNode, !node.isDirectory else { return }
-            activate(node.url, .pin)
+            guard row >= 0, let node = sender.item(atRow: row) as? FileNode else { return }
+            if node.isDirectory {
+                openFolder(node.url)
+            } else {
+                activate(node.url, .pin)
+            }
+        }
+
+        private func openFolder(_ url: URL) {
+            guard let workspace = parent?.workspace else { return }
+            Task { await workspace.setRoot(url) }
         }
 
         @objc func scrolled(_ notification: Notification) {
@@ -183,7 +192,13 @@ struct FileOutlineView: NSViewRepresentable {
             menu.removeAllItems()
             guard let outline, outline.clickedRow >= 0, let node = outline.item(atRow: outline.clickedRow) as? FileNode
             else { return }
-            if !node.isDirectory {
+            if node.isDirectory {
+                let open = menu.addItem(
+                    withTitle: "Open Folder in Sidebar", action: #selector(openFolderInSidebar(_:)), keyEquivalent: "")
+                open.target = self
+                open.representedObject = node.url
+                menu.addItem(.separator())
+            } else {
                 let open = menu.addItem(withTitle: "Open in New Tab", action: #selector(openInNewTab(_:)), keyEquivalent: "")
                 open.target = self
                 open.representedObject = node.url
@@ -192,6 +207,11 @@ struct FileOutlineView: NSViewRepresentable {
             let reveal = menu.addItem(withTitle: "Reveal in Finder", action: #selector(revealInFinder(_:)), keyEquivalent: "")
             reveal.target = self
             reveal.representedObject = node.url
+        }
+
+        @objc private func openFolderInSidebar(_ item: NSMenuItem) {
+            guard let url = item.representedObject as? URL else { return }
+            openFolder(url)
         }
 
         @objc private func openInNewTab(_ item: NSMenuItem) {

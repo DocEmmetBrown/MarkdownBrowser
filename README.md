@@ -4,7 +4,7 @@ A native macOS app for browsing and editing Markdown. Open a file or a whole fol
 
 ## Features
 
-- **Browse files and folders**: open a single file or a folder; folders get a sidebar file tree, sorted by name like Finder, that updates when files change on disk, stays fast with tens of thousands of files, and opens on the folder's README.
+- **Browse files and folders**: open a single file or a folder; folders get a sidebar file tree, sorted by name like Finder, that updates when files change on disk, stays fast with tens of thousands of files, and opens on the folder's README. Double-click a folder to open it in the sidebar; go back up with the arrow above the tree (or ⌥⌘↑), or pick any enclosing folder from the folder menu next to it. Going above the folder you opened asks for access to it first.
 - **GitHub-style rendering**: GitHub's stylesheet and colors; tables, task lists, `> [!NOTE]` alerts, footnotes, `:emoji:` shortcodes, math (`$…$`, `$$…$$`), raw HTML (sanitized, including `<details>` wrapping Markdown), images, and syntax-highlighted code.
 - **Mermaid diagrams**: ```` ```mermaid ```` blocks render as diagrams and switch theme with light/dark mode.
 - **Edit in the rendered view**: click anywhere to edit; the Markdown syntax appears only where the cursor is. Edits change exactly the characters you type: line endings, encoding and formatting elsewhere are preserved byte for byte.
@@ -79,6 +79,7 @@ The link points into the app, so reinstall it if you move the app.
 | Save / close | ⌘S / ⌘W |
 | Toggle Markdown source | ⌘U |
 | Back / forward | ⌘[ / ⌘] |
+| Enclosing folder (sidebar) | ⌥⌘↑ |
 | Follow link (in a new tab) | ⌘-click (⇧⌘-click) |
 | Open sidebar file in a new tab | ⌘-click |
 | Keep a preview tab open | ⌥⌘K, or double-click the tab |
@@ -99,6 +100,7 @@ The link points into the app, so reinstall it if you move the app.
 - Tables, diagrams and HTML inside blockquotes are shown as source.
 - A footnote definition ends at the first blank line, so multi-paragraph footnotes aren't supported.
 - If the editor's web process crashes, the last second of typing may be lost, along with undo history.
+- After changing the sidebar's folder, images in the open file written with a leading `/` (relative to the folder) resolve against the new folder only once the file is reopened.
 
 ## Project layout
 

@@ -13,7 +13,7 @@ final class SidebarFilterModel {
     /// Set to move keyboard focus to the filter field; the field resets it once it has taken focus.
     var focusRequested = false
 
-    let root: URL?
+    private(set) var root: URL?
     /// The folders whose entries the tree currently shows; what a non-recursive filter searches.
     @ObservationIgnored var visibleDirectories: () -> [URL] = { [] }
 
@@ -58,6 +58,13 @@ final class SidebarFilterModel {
         guard !results.isEmpty else { return }
         let current = selected.flatMap { selected in results.firstIndex { $0.url == selected.url } } ?? 0
         chosen = results[min(max(current + offset, 0), results.count - 1)].url
+    }
+
+    /// Follows the sidebar into another folder, searching it for the current query.
+    func setRoot(_ url: URL) {
+        guard root != nil, url != root else { return }
+        root = url
+        refresh()
     }
 
     /// Copies another model's query and scope, e.g. into a tab opened from one of its results.
