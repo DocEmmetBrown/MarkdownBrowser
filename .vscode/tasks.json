@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build and Run MarkdownBrowser",
+      "type": "shell",
+      "command": "npm ci --prefix web --no-audit --no-fund && npm run verify --prefix web && xcodegen generate && xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build test && open build/Build/Products/Debug/MarkdownBrowser.app",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "inAgents": true,
+      "problemMatcher": []
+    }
+  ]
+}

@@ -89,6 +89,11 @@ flowchart LR
 
 Run everything before submitting:
 
+In VS Code, run **Build and Run MarkdownBrowser** from the Agents Run button or
+**Tasks: Run Task**. It installs the web dependencies, type-checks, tests and builds
+the editor, generates the Xcode project, compiles and runs the Swift tests, and
+launches the app only if every step succeeds.
+
 ```sh
 # Swift unit tests (Swift Testing)
 xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build test

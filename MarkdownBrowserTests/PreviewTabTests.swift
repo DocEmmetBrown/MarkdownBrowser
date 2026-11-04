@@ -70,9 +70,7 @@ import Testing
                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1))
         #expect(
             TabDoubleClickMonitor.tabController(at: click) === second,
-            "window: \(String(describing: click.window)), frame: \(frame.frame), "
-                + "buttons: \(buttons.map(\.frame)), click: \(center), "
-                + "hit: \(String(describing: frame.hitTest(center)))")
+            "window: \(String(describing: click.window)), frame: \(frame.frame), buttons: \(buttons.map(\.frame)), click: \(center), hit: \(String(describing: frame.hitTest(center)))")
 
         // A file that's already open just selects its tab.
         await second.showFromSidebar(file("a.md"), hit: nil, pin: false)
