@@ -23,6 +23,13 @@ body.markdown-body {
   border-left-color: var(--fgColor-default);
 }
 
+.cm-editor .cm-selectionLayer {
+  /* CodeMirror draws the selection behind the text, so code blocks, inline code and other backgrounds cover it.
+     Draw it above instead; it's translucent, and clicks must still reach the text. */
+  z-index: 1 !important;
+  pointer-events: none;
+}
+
 .cm-editor .cm-selectionLayer .cm-selectionBackground {
   background: rgba(84, 174, 255, 0.28) !important;
 }
