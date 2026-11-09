@@ -51,11 +51,14 @@ jobs:
                 [ "$got" = "$name" ] && { echo "$name"; return 0; }
               done
             done
-            return 1
+            return 0
           }
 
-          prs=$(gh pr list --repo "$REPO" --author "dependabot[bot]" --base main \
-            --state open --json number,title,headRefOid --jq '.[] | @base64')
+          if ! prs=$(gh pr list --repo "$REPO" --author "dependabot[bot]" --base main \
+            --state open --json number,title,headRefOid --jq '.[] | @base64'); then
+            echo "::error::Failed to list open Dependabot PRs."
+            exit 1
+          fi
 
           if [ -z "$prs" ]; then echo "No open Dependabot PRs."; exit 0; fi
 
@@ -67,7 +70,10 @@ jobs:
             echo "-- PR #$number: $title"
 
             # 1. No conflicts, still open.
-            mergeable=$(gh pr view "$number" --repo "$REPO" --json mergeable --jq .mergeable)
+            if ! mergeable=$(gh pr view "$number" --repo "$REPO" --json mergeable --jq .mergeable); then
+              echo "   error: unable to inspect PR mergeability; will retry on next poll"
+              continue
+            fi
             if [ "$mergeable" != "MERGEABLE" ]; then
               echo "   skip: not mergeable ($mergeable)"; continue
             fi
@@ -80,9 +86,16 @@ jobs:
             fi
 
             # 3. Skip PRs touching a review-gated package.
-            changed=$(gh pr diff "$number" --repo "$REPO" --name-only)
+            if ! changed=$(gh pr diff "$number" --repo "$REPO" --name-only); then
+              echo "   error: unable to inspect changed files; will retry on next poll"
+              continue
+            fi
             if echo "$changed" | grep -qE '(^|/)package(-lock)?\.json$'; then
-              touched=$(gh pr diff "$number" --repo "$REPO" \
+              if ! diff=$(gh pr diff "$number" --repo "$REPO"); then
+                echo "   error: unable to inspect package changes; will retry on next poll"
+                continue
+              fi
+              touched=$(echo "$diff" \
                 | grep -oE '"[a-z@][^"]*"' | tr -d '"' | sort -u | tr '\n' ' ')
               hit=$(is_gated "$touched")
               if [ -n "$hit" ]; then
@@ -91,8 +104,11 @@ jobs:
             fi
 
             # 4. The `verify` check on the PR head must have passed.
-            conclusion=$(gh api "repos/$REPO/commits/$sha/check-runs" \
-              --jq '[.check_runs[] | select(.name=="verify")] | .[0] // empty | .conclusion')
+            if ! conclusion=$(gh api "repos/$REPO/commits/$sha/check-runs" \
+              --jq '[.check_runs[] | select(.name=="verify")] | .[0] // empty | .conclusion'); then
+              echo "   error: unable to inspect verify check; will retry on next poll"
+              continue
+            fi
             if [ "$conclusion" != "success" ]; then
               echo "   skip: verify not green (conclusion: ${conclusion:-none})"; continue
             fi
