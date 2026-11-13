@@ -11,7 +11,7 @@ A native macOS app for browsing and editing Markdown. Open a file or a whole fol
 - **View Source**: toggle (⌘U) to the plain Markdown, sharing the same undo history.
 - **Links**: ⌘-click to follow. Links to other files open in the app, `#heading` links scroll, web links open in your browser.
 - **Other files**: text and code open as editable source with syntax highlighting; images, videos and everything else use native viewers (Quick Look for the rest).
-- **Find & replace**: a find bar for the current file, and Find in Files across the current file, all open files, or the whole folder. Options for match case, regex, and wrap around; Replace All with confirmation. Both use JavaScript regex syntax and the same matching code, and patterns can span lines (`foo\nbar`); regex replacements can use `$&`, `$1` and `\n`.
+- **Find & replace**: a find bar for the current file, and Find in Files across the current file, all open files, or the whole folder. Options for match case, regex, and wrap around; Replace All with confirmation. Both use JavaScript regex syntax and match the same way, and patterns can span lines (`foo\nbar`); regex replacements can use `$&`, `$1` and `\n`.
 - **Quick filter**: a field above the sidebar's file tree (⇧⌘O) finds files and folders by fuzzy name, so `rdm` matches `README.md`; best matches first, case-insensitive, and a `/` in the query matches the relative path (`docs/rdm`). It searches the folders shown in the tree; tick **Include subfolders** to search the whole folder (hidden files and folders such as `node_modules` are skipped, at most 500 results). Click a result to open it like a tree click (⌘-click for a new tab), ↓/↑ and Return to pick one from the keyboard, Escape to clear the filter and bring back the tree.
 - **Saving**: ⌘S, or autosave when the window or app loses focus (on by default, can be turned off in Settings). Changes made by other apps are detected and never silently overwritten.
 - **Tabs and windows**: native macOS tabs (⌘T) and multiple windows. As in VS Code, a file clicked in the sidebar opens in a preview tab (slanted title) that the next click replaces; double-click the file or the tab, edit it, or choose **Keep Tab Open** (⌥⌘K) to keep it, and the next click opens a new tab.
@@ -35,11 +35,13 @@ xattr -dr com.apple.quarantine /Applications/MarkdownBrowser.app
 | macOS 14 Sonoma or later | Xcode 27 (Swift 6.4) |
 | | [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
 | | Node.js and npm (to bundle the editor) |
+| | Rust, through [rustup](https://rustup.rs) (to build the native core) |
 
 ## Building
 
 ```sh
-brew install xcodegen node
+brew install xcodegen node rustup
+rustup-init -y
 xcodegen generate
 open MarkdownBrowser.xcodeproj
 ```
@@ -51,7 +53,7 @@ xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDa
 open build/Build/Products/Debug/MarkdownBrowser.app
 ```
 
-The first build runs `npm ci` and bundles the web editor (`web/`). Later builds skip that step when the editor sources haven't changed.
+The first build runs `npm ci` and bundles the web editor (`web/`), and builds the Rust core (`native/`) with Cargo. Later builds skip those steps when their sources haven't changed. Release builds are universal, so they also need `rustup target add x86_64-apple-darwin` on Apple silicon (or `aarch64-apple-darwin` on Intel).
 
 Debug builds are signed ad hoc. Set your development team in `project.yml` before distributing.
 
@@ -108,6 +110,8 @@ The link points into the app, so reinstall it if you move the app.
 MarkdownBrowser/        Swift app (SwiftUI + AppKit)
 MarkdownBrowserTests/   Swift Testing unit tests
 web/                    Editor bundle (TypeScript, CodeMirror 6)
+native/                 Native core (Rust, exposed to Swift through UniFFI)
+goldens/                Results recorded from the JavaScript code that the native code must reproduce
 cli/mdb                 Command-line launcher
 Samples/                Fixture folder for manual testing
 project.yml             XcodeGen project definition

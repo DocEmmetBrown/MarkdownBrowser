@@ -1,8 +1,9 @@
 import Foundation
-import JavaScriptCore
+import MdbCore
 
-/// Runs the editor's own search code (web/src/search/engine.ts) so Find in Files matches exactly what the find bar
-/// matches. Not thread-safe: create one per task.
+/// Find and replace with the find bar's semantics (JavaScript regex, CodeMirror's cursors), run natively by the Rust
+/// core (native/mdb-core). goldens/search.json records the JavaScript results it must reproduce. Not thread-safe:
+/// create one per task.
 nonisolated final class SearchEngine {
     struct Match: Equatable {
         /// 1-based line number.
@@ -12,38 +13,16 @@ nonisolated final class SearchEngine {
         let length: Int
     }
 
-    private let context: JSContext
-    private let api: JSValue
+    private var cached: (options: SearchOptions, searcher: Searcher)?
 
-    static var scriptURL: URL? {
-        Bundle.main.url(forResource: "search-engine", withExtension: "js", subdirectory: "Web")
-    }
-
-    init() throws {
-        guard
-            let url = Self.scriptURL, let source = try? String(contentsOf: url, encoding: .utf8),
-            let context = JSContext()
-        else { throw SearchError.engineUnavailable }
-        context.evaluateScript(source, withSourceURL: url)
-        guard context.exception == nil, let api = context.objectForKeyedSubscript("mdbSearch"), api.isObject else {
-            throw SearchError.engineUnavailable
-        }
-        self.context = context
-        self.api = api
-    }
-
-    /// The JavaScript error message for an invalid regular expression, or nil.
+    /// The JavaScript-style error message for an invalid regular expression, or nil.
     func validate(_ options: SearchOptions) -> String? {
-        let result = call("validate", [query(options)])
-        return result?.isString == true ? result?.toString() : nil
+        searcher(options).validationError()
     }
 
     func matches(in text: String, lineSeparator: String, options: SearchOptions, limit: Int) -> [Match] {
-        guard let numbers = call("find", [text, lineSeparator, query(options), limit])?.toArray() as? [NSNumber] else {
-            return []
-        }
-        return stride(from: 0, to: numbers.count - 2, by: 3).map {
-            Match(line: numbers[$0].intValue, column: numbers[$0 + 1].intValue, length: numbers[$0 + 2].intValue)
+        searcher(options).find(text: text, lineSeparator: lineSeparator, limit: UInt32(clamping: max(0, limit))).map {
+            Match(line: Int($0.line), column: Int($0.column), length: Int($0.length))
         }
     }
 
@@ -51,21 +30,15 @@ nonisolated final class SearchEngine {
     func replace(in text: String, lineSeparator: String, options: SearchOptions, template: String) -> (
         text: String, count: Int
     ) {
-        guard
-            let result = call("replace", [text, lineSeparator, query(options), template]),
-            let replaced = result.forProperty("text")?.toString(),
-            let count = result.forProperty("count")?.toNumber()?.intValue
-        else { return (text, 0) }
-        return (replaced, count)
+        let result = searcher(options).replace(text: text, lineSeparator: lineSeparator, template: template)
+        return (result.text, Int(result.count))
     }
 
-    private func query(_ options: SearchOptions) -> [String: Any] {
-        ["search": options.query, "caseSensitive": options.caseSensitive, "regexp": options.regex]
-    }
-
-    private func call(_ name: String, _ arguments: [Any]) -> JSValue? {
-        context.exception = nil
-        let result = api.invokeMethod(name, withArguments: arguments)
-        return context.exception == nil ? result : nil
+    private func searcher(_ options: SearchOptions) -> Searcher {
+        if let cached, cached.options == options { return cached.searcher }
+        let searcher = Searcher(
+            query: SearchQuery(search: options.query, caseSensitive: options.caseSensitive, regexp: options.regex))
+        cached = (options, searcher)
+        return searcher
     }
 }

@@ -49,7 +49,8 @@ flowchart LR
   - `livePreview/inline.ts` hides Markdown syntax and styles text.
   - `livePreview/blocks.ts` replaces tables, HTML, math and Mermaid blocks with rendered widgets when the cursor isn't inside them.
   - `render/` holds the GitHub-compatible HTML pipeline, Mermaid and KaTeX.
-  - `search/engine.ts` is the find-and-replace logic. The find bar uses it directly; it is also built into `search-engine.js` (`vite.engine.config.ts`), which `SearchEngine` runs in JavaScriptCore for Find in Files, so both match the same way.
+  - `search/engine.ts` is the find bar's find-and-replace logic. Find in Files uses `SearchEngine`, which runs a Rust port of it (`native/mdb-core/src/search.rs`, JavaScript regex through `regress`); both are checked against `goldens/search.json` so they match the same way.
+- **The native core** (`native/`) is a Rust workspace exposed to Swift through UniFFI. `native/build.sh`, a pre-build phase of the `MdbCore` target, builds it for the active architectures into the products folder and generates the Swift bindings into `native/generated/` (not committed). `MdbCore` compiles those bindings without main-actor isolation; the app links `libmdb_core.a`.
 
 ## Rules worth knowing
 
@@ -100,6 +101,9 @@ xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDa
 
 # Editor: type check and unit tests (Vitest + jsdom)
 cd web && npx tsc --noEmit && npx vitest run
+
+# Native core: unit tests and the goldens replay (release mode keeps the replay fast)
+cd native && cargo test --release && cargo clippy --all-targets --features mdb-core/bindgen
 ```
 
 What the suites cover:
@@ -111,6 +115,7 @@ What the suites cover:
   - scheme URLs and byte ranges
   - search and replace
   - saving, conflict detection and autosave
+- **Native core** (`native/mdb-core`): find and replace, including a replay of `goldens/search.json`.
 - **Editor**:
   - byte-exact round trips
   - live-preview rendering

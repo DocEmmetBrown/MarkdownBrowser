@@ -1,0 +1,4 @@
+[bindings.swift]
+module_name = "MdbCore"
+ffi_module_name = "MdbCoreFFI"
+ffi_module_filename = "MdbCoreFFI"

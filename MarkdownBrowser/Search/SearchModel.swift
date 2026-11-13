@@ -83,10 +83,8 @@ final class SearchModel {
             isSearching = false
             return
         }
-        do {
-            if let message = try SearchEngine().validate(options) { throw SearchError.invalidPattern(message) }
-        } catch {
-            errorMessage = error.localizedDescription
+        if let message = SearchEngine().validate(options) {
+            errorMessage = SearchError.invalidPattern(message).localizedDescription
             return
         }
         isSearching = true
@@ -101,7 +99,8 @@ final class SearchModel {
     /// Open documents are edited in their editor (undoable, left unsaved); other files are rewritten on disk.
     func replaceAll() async {
         task?.cancel()
-        guard !options.query.isEmpty, let engine = try? SearchEngine(), engine.validate(options) == nil else { return }
+        let engine = SearchEngine()
+        guard !options.query.isEmpty, engine.validate(options) == nil else { return }
         isSearching = true
         let (sources, documents) = await gatherSources()
         var total = ReplaceSummary()
