@@ -2,8 +2,8 @@ import { ChangeSet, Text, type ChangeSpec } from "@codemirror/state"
 import { RegExpCursor, SearchCursor } from "@codemirror/search"
 
 /**
- * Find and replace with exactly the find bar's semantics (CodeMirror's cursors, JavaScript regex),
- * shared by the editor and, through JavaScriptCore, by Find in Files.
+ * Find and replace with exactly the find bar's semantics (CodeMirror's cursors, JavaScript regex).
+ * Find in Files runs a Rust port (native/mdb-core), kept in sync through goldens/search.json recorded from this file.
  */
 export interface EngineQuery {
   search: string

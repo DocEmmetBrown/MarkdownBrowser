@@ -32,6 +32,14 @@ updates:
           - "jsdom"
           - "@types/*"
 
+  - package-ecosystem: cargo
+    directory: /native
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 2
+    open-pull-requests-limit: 10
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -23,6 +23,8 @@ jobs:
           sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
           xcodebuild -version
       - run: brew install xcodegen
+      # Builds the native core (native/build.sh) with rustup's toolchain.
+      - run: rustup toolchain install stable --profile minimal
       - run: scripts/build-release.sh "$GITHUB_REF_NAME"
         env:
           BUILD_NUMBER: ${{ github.run_number }}

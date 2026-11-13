@@ -22,6 +22,8 @@ jobs:
           sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
           xcodebuild -version
       - run: brew install xcodegen
+      # Builds the native core (native/build.sh) with rustup's toolchain.
+      - run: rustup toolchain install stable --profile minimal
       - run: xcodegen generate
       - run: |
           if ! xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build \
@@ -29,3 +31,17 @@ jobs:
             xcrun xcresulttool get test-results summary --path build/tests.xcresult
             exit 1
           fi
+
+  core:
+    name: core
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets --features mdb-core/bindgen -- -D warnings
+      # Includes the replay of goldens/search.json.
+      - run: cargo test --locked --release
