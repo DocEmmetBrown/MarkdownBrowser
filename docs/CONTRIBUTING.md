@@ -119,6 +119,7 @@ What the suites cover:
   - anchors
   - HTML sanitizing
   - find and replace, including parity between the find bar and the Find in Files engine
+  - search goldens: `test/searchGoldens.test.ts` records the engine's results over a fixed corpus in `goldens/search.json`, the reference for the native engine (see `docs/native-migration-plan.md`). If a dependency update changes them, review the diff and run `npm run goldens` to accept it.
 
 Some things can only be checked by hand. Open `Samples/` in the app and confirm:
 
