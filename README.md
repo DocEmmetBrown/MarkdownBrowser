@@ -32,7 +32,7 @@ xattr -dr com.apple.quarantine /Applications/MarkdownBrowser.app
 
 | To run | To build |
 |---|---|
-| macOS 14 Sonoma or later | Xcode 27 (Swift 6.4) |
+| macOS 14 Sonoma or later on Apple silicon | Xcode 27 (Swift 6.4) |
 | | [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
 | | Node.js and npm (to bundle the editor) |
 | | Rust, through [rustup](https://rustup.rs) (to build the native core) |
@@ -53,7 +53,7 @@ xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDa
 open build/Build/Products/Debug/MarkdownBrowser.app
 ```
 
-The first build runs `npm ci` and bundles the web editor (`web/`), and builds the Rust core (`native/`) with Cargo. Later builds skip those steps when their sources haven't changed. Release builds are universal, so they also need `rustup target add x86_64-apple-darwin` on Apple silicon (or `aarch64-apple-darwin` on Intel).
+The first build runs `npm ci` and bundles the web editor (`web/`), and builds the Rust core (`native/`) with Cargo. Later builds skip those steps when their sources haven't changed.
 
 Debug builds are signed ad hoc. Set your development team in `project.yml` before distributing.
 

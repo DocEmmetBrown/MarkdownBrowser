@@ -39,8 +39,7 @@ LIBS=()
 for ARCH in $ARCHS; do
   case "$ARCH" in
     arm64) TARGET=aarch64-apple-darwin ;;
-    x86_64) TARGET=x86_64-apple-darwin ;;
-    *) echo "error: unsupported architecture $ARCH" >&2; exit 1 ;;
+    *) echo "error: unsupported architecture $ARCH (the app targets Apple silicon only)" >&2; exit 1 ;;
   esac
   if [[ ! -d "$("$RUSTC" --print target-libdir --target "$TARGET")" ]]; then
     echo "error: the Rust standard library for $TARGET is missing: rustup target add $TARGET" >&2

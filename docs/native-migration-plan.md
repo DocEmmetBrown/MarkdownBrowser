@@ -85,7 +85,7 @@ Rule: take a maintained compiled library when one exists, so upstream fixes arri
 | `@codemirror/search` + JS regex | **regress** 0.12 (Rust, ECMAScript regex syntax and semantics) | Rust | Keeps the documented JS regex behavior, unlike the prototype's ICU. Keep the prototype's `Source` offset mapping and `$&`/`$1`/`\n` templating. |
 | Our TS (live preview, links, anchors, footnotes, slug, textDiff, find) | Hand port | Swift | No upstream to follow. Port once and keep the behavior locked with converted tests (§4C). |
 
-Packaging the Rust code: one crate, `native/mdb-core` (comrak, ammonia, regress, mermaid-rs-renderer, resvg), exposed through **UniFFI** 0.32. It's built by `scripts/build-core.sh` into a universal static `xcframework`, with a hash stamp so unchanged sources are skipped, as `web/build.sh` does today. The Rust toolchain replaces Node as a build requirement, and Dependabot gets a `cargo` entry. tree-sitter stays C and comes in through SwiftPM.
+Packaging the Rust code: one crate, `native/mdb-core` (comrak, ammonia, regress, mermaid-rs-renderer, resvg), exposed through **UniFFI** 0.32. It's built by `native/build.sh` into a static library for Apple silicon (the only platform the app targets), with a hash stamp so unchanged sources are skipped, as `web/build.sh` does today. The Rust toolchain replaces Node as a build requirement, and Dependabot gets a `cargo` entry. tree-sitter stays C and comes in through SwiftPM.
 
 ## 4. "Follow upstream": what can be converted
 
