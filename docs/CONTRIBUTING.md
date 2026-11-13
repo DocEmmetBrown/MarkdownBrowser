@@ -88,7 +88,7 @@ flowchart LR
 
 ## Testing
 
-Run everything before submitting:
+Run everything before submitting. While the repository is private, CI runs the Swift tests only on demand (**Actions › app › Run workflow**), so the local run is the check that counts:
 
 In VS Code, run **Build and Run MarkdownBrowser** from the Agents Run button or
 **Tasks: Run Task**. It installs the web dependencies, type-checks, tests and builds
