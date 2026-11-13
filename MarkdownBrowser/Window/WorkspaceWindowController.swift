@@ -317,14 +317,29 @@ enum TabDoubleClickMonitor {
         guard let window = event.window, let frame = window.contentView?.superview,
             let windows = window.tabGroup?.windows, windows.count > 1
         else { return nil }
-        var view = frame.hitTest(event.locationInWindow)
-        while let current = view, String(describing: type(of: current)) != "NSTabButton" { view = current.superview }
-        guard let button = view, let bar = button.superview else { return nil }
-        let buttons = bar.subviews.filter { String(describing: type(of: $0)) == "NSTabButton" }.sorted {
-            $0.frame.minX < $1.frame.minX
+        let point = event.locationInWindow
+        // The tab bar can take the hit itself (e.g. while its buttons settle), so buttons are matched by frame.
+        var view = frame.hitTest(point)
+        while let current = view, !isKind(current, "NSTabBar"), !isKind(current, "NSTabButton") {
+            view = current.superview
         }
-        guard buttons.count == windows.count, let index = buttons.firstIndex(where: { $0 === button }) else { return nil }
+        guard let hit = view else { return nil }
+        var bar = hit
+        while let parent = bar.superview, !isKind(bar, "NSTabBar") { bar = parent }
+        if !isKind(bar, "NSTabBar") { bar = hit.superview ?? hit }
+        let buttons = tabButtons(in: bar).sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
+        guard buttons.count == windows.count,
+            let index = buttons.firstIndex(where: { $0.convert($0.bounds, to: nil).contains(point) })
+        else { return nil }
         return windows[index].windowController as? WorkspaceWindowController
+    }
+
+    private static func isKind(_ view: NSView, _ name: String) -> Bool {
+        String(describing: type(of: view)) == name
+    }
+
+    private static func tabButtons(in view: NSView) -> [NSView] {
+        isKind(view, "NSTabButton") ? [view] : view.subviews.flatMap(tabButtons(in:))
     }
 }
 

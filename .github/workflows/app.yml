@@ -1,0 +1,31 @@
+name: app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The build bundles the web editor, which needs Node.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The project needs the newest Xcode on the image (see README requirements).
+      - run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - run: |
+          if ! xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build \
+            -resultBundlePath build/tests.xcresult -quiet test; then
+            xcrun xcresulttool get test-results summary --path build/tests.xcresult
+            exit 1
+          fi
