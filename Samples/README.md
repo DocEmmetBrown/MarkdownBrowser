@@ -3,7 +3,7 @@
 A fixture for checking rendering against GitHub. Open this folder in the app.
 
 > [!NOTE]
-> Cmd+click a link to follow it. Click anywhere to edit; the Markdown source appears where the caret is.
+> Click rendered blocks to edit their source in place. Cmd+click links to follow them; Cmd+U reveals all Markdown source.
 
 ## Text formatting
 
@@ -20,7 +20,7 @@ $$
 ## Lists
 
 - [x] Render GitHub-flavored Markdown
-- [ ] Edit without reformatting
+- [x] Edit without reformatting
   - Nested bullet
     - Deeper bullet
 1. First
@@ -34,6 +34,8 @@ $$
 | Mermaid | ✅     | below |
 
 ## Code
+
+See the [code language showcase](code-languages.md) for examples across many languages.
 
 ```swift
 struct Greeting {

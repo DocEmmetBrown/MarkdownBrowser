@@ -40,7 +40,7 @@ struct DocumentArea: View {
         if let url = workspace.selection {
             switch workspace.selectionKind {
             case .markdown, .text:
-                EditorWebView(host: workspace.editor)
+                NativeEditorView(host: workspace.editor)
             case .image:
                 ImageViewer(url: url)
             case .video:

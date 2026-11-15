@@ -15,7 +15,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         }
     }
 
-    /// `nil` follows the system; web content follows too, via the web view's effective appearance.
+    /// `nil` follows the system appearance.
     var nsAppearance: NSAppearance? {
         switch self {
         case .system: nil

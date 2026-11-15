@@ -3,7 +3,7 @@ import Testing
 
 @testable import MarkdownBrowser
 
-/// Stands in for the web editor: holds the "live" text and tracks what was saved.
+/// Holds the live text and tracks what was saved.
 final class FakeEditor: DocumentEditor {
     var text: String
     var savedText: String
@@ -66,20 +66,21 @@ final class FakeEditor: DocumentEditor {
         let (document, editor, url) = try makeDocument("saved\n")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        #expect(EditorHost.loadArguments(for: document, rootURL: nil, anchor: nil)["current"] is NSNull)
+        let host = NativeEditorHost()
+        host.load(document, rootURL: nil, anchor: nil)
+        #expect(host.textView.string == "saved\n")
         editor.text = "saved\nunsaved\n"
         document.isDirty = true
         document.unsavedText = editor.text
-        var args = EditorHost.loadArguments(for: document, rootURL: nil, anchor: nil)
-        #expect(args["text"] as? String == "saved\n")
-        #expect(args["current"] as? String == "saved\nunsaved\n")
+        host.load(document, rootURL: nil, anchor: nil)
+        #expect(host.textView.string == "saved\nunsaved\n")
 
         // Saving refreshes the baseline, so a later restart doesn't bring back an old load.
         #expect(await document.save() == .saved)
         document.isDirty = false
-        args = EditorHost.loadArguments(for: document, rootURL: nil, anchor: nil)
-        #expect(args["text"] as? String == "saved\nunsaved\n")
-        #expect(args["current"] is NSNull)
+        host.load(document, rootURL: nil, anchor: nil)
+        #expect(host.textView.string == "saved\nunsaved\n")
+        #expect(await host.snapshot(docId: document.id)?.dirty == false)
         #expect(document.unsavedText == nil)
     }
 

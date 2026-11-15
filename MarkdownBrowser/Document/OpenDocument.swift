@@ -8,7 +8,7 @@ nonisolated struct EditorSnapshot: Sendable {
     let dirty: Bool
 }
 
-/// The editor that holds a document's live text (the web editor in the app, a fake in tests).
+/// The editor that holds a document's live text.
 protocol DocumentEditor: AnyObject {
     func snapshot(docId: Int) async -> EditorSnapshot?
     func markSaved(docId: Int, snapshotId: Int) async
@@ -46,7 +46,7 @@ final class OpenDocument: Identifiable {
     var lastError: String?
 
     @ObservationIgnored weak var editor: DocumentEditor?
-    /// Latest unsaved text reported by the editor, restored if its web process dies.
+    /// Latest unsaved text reported by the editor, retained until it is saved or replaced.
     @ObservationIgnored var unsavedText: String?
     @ObservationIgnored private var diskHash: Data
     @ObservationIgnored private var watcher: FileWatcher?

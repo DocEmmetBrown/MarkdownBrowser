@@ -4,6 +4,5 @@ build/
 dist/
 DerivedData/
 xcuserdata/
-web/node_modules/
-web/dist/
-web/.build/
+native/target/
+native/generated/

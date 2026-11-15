@@ -44,11 +44,11 @@ final class Workspace {
     var expanded: Set<URL> = []
     var sidebarMode: SidebarMode = .files
     var isSidebarVisible: Bool
-    /// A resource the web view was denied access to; drives the "Grant Access…" banner.
+    /// A preview resource denied access; drives the "Grant Access…" banner.
     var deniedResource: URL?
     var openError: String?
 
-    @ObservationIgnored let editor = EditorHost()
+    @ObservationIgnored let editor: NativeEditorHost
     @ObservationIgnored weak var delegate: WorkspaceDelegate?
     /// Sidebar scroll position, carried over to tabs opened from the sidebar.
     @ObservationIgnored var sidebarScrollOffset: CGFloat = 0
@@ -61,6 +61,7 @@ final class Workspace {
 
     init(url: URL) {
         let url = url.normalizedFileURL
+        editor = NativeEditorHost()
         rootURL = url
         scopes.append(SecurityScope(url: url))
         isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
@@ -91,9 +92,9 @@ final class Workspace {
     }
 
     private func configureEditor() {
-        editor.schemeHandler.isAllowed = { [weak self] url in self?.canAccess(url) ?? false }
-        editor.schemeHandler.onDenied = { [weak self] url in
-            Task { @MainActor [weak self] in self?.deniedResource = url }
+        editor.preview.isAllowed = { [weak self] url in self?.canAccess(url) ?? false }
+        editor.preview.onDenied = { [weak self] url in
+            self?.deniedResource = url
         }
         editor.onDirtyChange = { [weak self] docId, dirty in
             guard let document = self?.document, document.id == docId else { return }
@@ -434,6 +435,8 @@ final class Workspace {
         let previous = rootURL
         tree?.release()
         rootURL = folder
+        editor.preview.rootURL = folder
+        editor.refreshMedia()
         tree = FileTree.acquire(folder)
         search.setRoot(folder)
         filter.setRoot(folder)

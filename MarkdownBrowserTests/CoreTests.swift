@@ -174,28 +174,6 @@ import Testing
     }
 }
 
-@Suite struct SchemeHandlerTests {
-    @Test func mapsFileURLsBothWays() {
-        let file = URL(filePath: "/Users/me/My Docs/read me.md")
-        let scheme = LocalResourceSchemeHandler.schemeURL(for: file)
-        #expect(scheme.absoluteString == "mdb-file://local/Users/me/My%20Docs/read%20me.md")
-        #expect(LocalResourceSchemeHandler.fileURL(for: scheme)?.path == file.path)
-    }
-
-    @Test func rejectsOtherHosts() {
-        #expect(LocalResourceSchemeHandler.fileURL(for: URL(string: "mdb-file://evil/etc/passwd")!) == nil)
-    }
-
-    @Test func parsesByteRanges() {
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=0-99", size: 1000) == 0..<100)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=900-", size: 1000) == 900..<1000)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=-100", size: 1000) == 900..<1000)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=0-5000", size: 1000) == 0..<1000)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=2000-", size: 1000) == nil)
-        #expect(LocalResourceSchemeHandler.byteRange(nil, size: 1000) == nil)
-    }
-}
-
 @Suite struct FolderSearchTests {
     @Test func findsMatchesWithUTF16Columns() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -209,7 +187,7 @@ import Testing
         #expect(files.map(\.lastPathComponent) == ["a.md"])
 
         let hits = FolderSearch.search(
-            .file(files[0]), options: SearchOptions(query: "NEEDLE"), engine: try SearchEngine(), limit: 10)
+            .file(files[0]), options: SearchOptions(query: "NEEDLE"), engine: SearchEngine(), limit: 10)
         #expect(hits.count == 1)
         #expect(hits[0].line == 2)
         #expect(hits[0].column == 3)
@@ -217,7 +195,7 @@ import Testing
     }
 
     @Test func usesJavaScriptRegexSyntax() throws {
-        let engine = try SearchEngine()
+        let engine = SearchEngine()
         let options = SearchOptions(query: "n[e]+dle(?<end>s?)\\b", caseSensitive: true, regex: true)
         #expect(engine.validate(options) == nil)
         #expect(engine.matches(in: "needle Needle needles", lineSeparator: "\n", options: options, limit: 10).map(\.column) == [0, 14])
@@ -226,11 +204,29 @@ import Testing
         #expect(engine.validate(SearchOptions(query: "(", regex: true)) != nil)
     }
 
+    @Test func regexCacheDistinguishesCanonicalUnicodeSequences() {
+        let engine = SearchEngine()
+        let source = "é e\u{301}"
+        for (query, column, length, replacement) in [
+            ("é", 0, 1, "X e\u{301}"),
+            ("e\u{301}", 2, 2, "é X"),
+            ("é", 0, 1, "X e\u{301}"),
+        ] {
+            let options = SearchOptions(query: query, caseSensitive: true, regex: true)
+            #expect(engine.matches(in: source, lineSeparator: "\n", options: options, limit: 10) == [
+                SearchEngine.Match(line: 1, column: column, length: length)
+            ])
+            let result = engine.replace(in: source, lineSeparator: "\n", options: options, template: "X")
+            #expect(result.text == replacement)
+            #expect(result.count == 1)
+        }
+    }
+
     @Test func matchesAcrossLines() throws {
         let text = "intro\r\nfoo\r\nbar baz\r\n"
         let hits = FolderSearch.search(
             .text(URL(filePath: "/t.md"), text, lineSeparator: "\r\n"),
-            options: SearchOptions(query: "foo\\nbar", regex: true), engine: try SearchEngine(), limit: 10)
+            options: SearchOptions(query: "foo\\nbar", regex: true), engine: SearchEngine(), limit: 10)
         #expect(hits.map(\.line) == [2])
         #expect(hits[0].length == 7)
         #expect(hits[0].previewMatch.length == 3)
@@ -239,13 +235,13 @@ import Testing
     @Test func replacesLiterallyAndPreservesLineEndings() throws {
         let (text, count) = FolderSearch.replace(
             in: "Cat $1\r\ncat\r\n", lineSeparator: "\r\n", options: SearchOptions(query: "cat"), template: "$1dog",
-            engine: try SearchEngine())
+            engine: SearchEngine())
         #expect(count == 2)
         #expect(text == "$1dog $1\r\n$1dog\r\n")
     }
 
     @Test func replacesWithRegexGroupsAcrossLines() throws {
-        let engine = try SearchEngine()
+        let engine = SearchEngine()
         var (text, count) = FolderSearch.replace(
             in: "a@b c@d\ne", lineSeparator: "\n", options: SearchOptions(query: "(\\w+)@(\\w+)", regex: true),
             template: "$2@$1", engine: engine)
@@ -259,7 +255,7 @@ import Testing
     }
 
     @Test func replacementMatchesSearchCounts() throws {
-        let engine = try SearchEngine()
+        let engine = SearchEngine()
         let options = SearchOptions(query: "x*", regex: true)
         let hits = FolderSearch.search(
             .text(URL(filePath: "/t.md"), "axxb\nx", lineSeparator: "\n"), options: options, engine: engine, limit: 10)

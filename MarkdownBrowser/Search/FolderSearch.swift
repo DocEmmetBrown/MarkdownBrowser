@@ -39,12 +39,10 @@ nonisolated enum SearchSource: Sendable {
 
 nonisolated enum SearchError: Error, LocalizedError {
     case invalidPattern(String)
-    case engineUnavailable
 
     var errorDescription: String? {
         switch self {
         case .invalidPattern(let message): message
-        case .engineUnavailable: "Search isn't available: the search engine is missing from the app."
         }
     }
 }
@@ -59,14 +57,11 @@ nonisolated enum FolderSearch {
     static let maxFileSize = 5_000_000
     static let maxHits = 2_000
 
-    /// Streams per-file results. Matching runs the editor's search code, so hits line up with the find bar.
+    /// Streams per-file results. Matching has the find bar's semantics (SearchEngine), so hits line up with it.
     static func run(sources: [SearchSource], options: SearchOptions) -> AsyncStream<SearchFileResult> {
         AsyncStream { continuation in
             let task = Task.detached(priority: .userInitiated) {
-                guard let engine = try? SearchEngine() else {
-                    continuation.finish()
-                    return
-                }
+                let engine = SearchEngine()
                 var total = 0
                 for source in sources {
                     if Task.isCancelled || total >= maxHits { break }
@@ -139,10 +134,7 @@ nonisolated enum FolderSearch {
     /// Rewrites files on disk in their original encoding and line endings.
     static func replaceInFiles(_ urls: [URL], options: SearchOptions, template: String) -> ReplaceSummary {
         var summary = ReplaceSummary()
-        guard let engine = try? SearchEngine() else {
-            summary.failures = urls.map(\.lastPathComponent)
-            return summary
-        }
+        let engine = SearchEngine()
         for url in urls {
             guard let data = try? Data(contentsOf: url) else { continue }
             let decoded = TextCodec.decode(data)
