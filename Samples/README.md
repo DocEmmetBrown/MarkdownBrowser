@@ -20,7 +20,7 @@ $$
 ## Lists
 
 - [x] Render GitHub-flavored Markdown
-- [ ] Edit without reformatting
+- [x] Edit without reformatting
   - Nested bullet
     - Deeper bullet
 1. First
@@ -34,6 +34,8 @@ $$
 | Mermaid | ✅     | below |
 
 ## Code
+
+See the [code language showcase](code-languages.md) for examples across many languages.
 
 ```swift
 struct Greeting {

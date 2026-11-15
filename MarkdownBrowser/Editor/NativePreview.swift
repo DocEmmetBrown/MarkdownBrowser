@@ -12,6 +12,8 @@ nonisolated struct NativeRenderTree: Sendable {
     let children: [[Int]]
     let roots: [Int]
     let source: String
+    let sourceMaps: [Int: NativeRenderedSourceMap]
+    let sourceRanges: [Int: NSRange]
     let failure: String?
 
     init(_ source: String, structure: [MarkdownNode] = []) {
@@ -50,6 +52,60 @@ nonisolated struct NativeRenderTree: Sendable {
         }
         self.children = children
         self.roots = roots
+        var sourceChildren = Array(repeating: [Int](), count: structure.count)
+        for (index, node) in structure.enumerated() {
+            if let parent = node.parent { sourceChildren[Int(parent)].append(index) }
+        }
+        let byStart = Dictionary(grouping: structure.indices, by: { structure[$0].start })
+        let kinds: [String: MarkdownKind] = [
+            "p": .paragraph, "h1": .heading, "h2": .heading, "h3": .heading,
+            "h4": .heading, "h5": .heading, "h6": .heading, "td": .tableCell, "th": .tableCell,
+            "strong": .strong, "em": .emphasis, "del": .strike, "a": .link, "code": .code, "pre": .codeBlock,
+            "img": .image, "span": .math, "hr": .rule,
+        ]
+        let sourceText = source as NSString
+        var sourceMaps: [Int: NativeRenderedSourceMap] = [:]
+        var sourceRanges: [Int: NSRange] = [:]
+        for (index, node) in records.enumerated() {
+            if let start = node.attributes["source-start"].flatMap(Int.init),
+               let end = node.attributes["source-end"].flatMap(Int.init),
+               start >= 0, end >= start, end <= sourceText.length {
+                sourceRanges[index] = NSRange(location: start, length: end - start)
+            }
+            guard let kind = kinds[node.tag],
+                  let start = node.attributes["source-start"].flatMap(UInt32.init),
+                  let original = byStart[start]?.first(where: { structure[$0].kind == kind }) else { continue }
+            sourceMaps[index] = NativeRenderedSourceMap.make(
+                index: original, nodes: structure, children: sourceChildren, source: sourceText)
+            sourceRanges[index] = structure[original].range
+        }
+        let containers: Set<String> = ["html", "body", "div", "section", "article", "table", "thead",
+            "tbody", "tfoot", "tr", "ul", "ol", "li", "details", "blockquote", "pre"]
+        for index in records.indices.reversed()
+            where sourceMaps[index] == nil && sourceRanges[index] != nil && !containers.contains(records[index].tag) {
+            if records[index].attributes["source-text"] == "true", let range = sourceRanges[index] {
+                let text = children[index].map { records[$0].text }.joined()
+                sourceMaps[index] = .aligned(text, range: range, source: sourceText)
+            } else {
+                var text = ""
+                var offsets: [Int] = []
+                var complete = true
+                for child in children[index] {
+                    if let part = sourceMaps[child], !part.text.isEmpty {
+                        if !offsets.isEmpty { offsets.removeLast() }
+                        text += part.text
+                        offsets.append(contentsOf: part.offsets)
+                    } else if records[child].tag == "#text", !records[child].text.isEmpty {
+                        complete = false
+                    }
+                }
+                if complete, !text.isEmpty {
+                    sourceMaps[index] = NativeRenderedSourceMap(text: text, offsets: offsets)
+                }
+            }
+        }
+        self.sourceMaps = sourceMaps
+        self.sourceRanges = sourceRanges
     }
 
     func text(_ index: Int) -> String {
@@ -76,6 +132,8 @@ final class NativePreviewModel {
     var openLink: (String, Bool) -> Void = { _, _ in }
     var toggleTask: (Int, String) -> Void = { _, _ in }
     var editBlock: (Int) -> Void = { _ in }
+    var editText: (Int, Int, NSEvent) -> Void = { _, _, _ in }
+    var editPosition: (Int, Int) -> Void = { _, _ in }
     var pageLayout = AppSettings.pageLayout
     let logger = Logger(subsystem: "MarkdownBrowser", category: "NativePreview")
 
@@ -155,6 +213,10 @@ struct NativePreviewBlock: View {
     var body: some View {
         content
             .id(node.attributes["id"] ?? node.attributes["name"] ?? "block-\(index)")
+            .contextMenu {
+                Button("Edit Markdown Source") { model.editBlock(index) }
+            }
+            .accessibilityAction(named: Text("Edit Markdown Source")) { model.editBlock(index) }
     }
 
     @ViewBuilder private var content: some View {
@@ -179,6 +241,7 @@ struct NativePreviewBlock: View {
             }
         case "hr":
             Divider()
+                .onTapGesture { model.editBlock(index) }
         case "blockquote":
             HStack(alignment: .top) {
                 Rectangle().fill(.secondary.opacity(0.5)).frame(width: 3)
@@ -209,8 +272,9 @@ struct NativePreviewBlock: View {
                 .replacingOccurrences(of: "language-", with: "") ?? ""
             if language == "mermaid" {
                 NativeDiagramView(source: tree.text(index), model: model)
+                    .onTapGesture { model.editBlock(index) }
             } else {
-                NativeCodeView(source: tree.text(index), language: language, model: model)
+                NativeCodeView(tree: tree, index: index, language: language, model: model)
             }
         case "table":
             ScrollView(.horizontal) {
@@ -241,6 +305,7 @@ struct NativePreviewBlock: View {
             }
         case "img":
             NativeImageView(href: node.attributes["src"] ?? "", alt: node.attributes["alt"] ?? "", model: model)
+                .onTapGesture { model.editBlock(index) }
         case "video":
             NativeVideoView(href: node.attributes["src"] ?? tree.children[index].compactMap { tree.nodes[$0].attributes["src"] }.first ?? "", model: model)
         case "a" where containsMedia(index):
@@ -295,7 +360,8 @@ struct NativePreviewBlock: View {
     }
 
     private func inline(_ index: Int) -> some View {
-        NativeInlineText(tree: tree, index: index, model: model, dark: colorScheme == .dark)
+        NativeInlineText(tree: tree, index: index, model: model, dark: colorScheme == .dark,
+            wraps: !["td", "th"].contains(tree.nodes[index].tag))
     }
 }
 
@@ -304,6 +370,8 @@ private struct NativeInlineText: NSViewRepresentable {
     let index: Int
     let model: NativePreviewModel
     let dark: Bool
+    var highlighted: NSAttributedString?
+    var wraps = true
     @Environment(\.openURL) private var openURL
 
     func makeNSView(context: Context) -> NativeInlineTextView {
@@ -314,6 +382,11 @@ private struct NativeInlineText: NSViewRepresentable {
         view.textContainerInset = .zero
         view.textContainer?.lineFragmentPadding = 0
         view.textContainer?.widthTracksTextView = false
+        view.setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Edit Markdown Source", handler: { [weak view] in
+                view?.accessibilityPerformPress() ?? false
+            }),
+        ])
         return view
     }
 
@@ -332,19 +405,46 @@ private struct NativeInlineText: NSViewRepresentable {
         if node.attributes["class"]?.contains("markdown-alert-title") == true {
             attributes[.font] = NSFont.systemFont(ofSize: 15, weight: .semibold)
         }
-        let text = attributed(index, attributes: attributes)
+        if ["td", "th"].contains(node.tag) {
+            let paragraph = NSMutableParagraphStyle()
+            switch node.attributes["align"] {
+            case "center": paragraph.alignment = .center
+            case "right": paragraph.alignment = .right
+            default: paragraph.alignment = .left
+            }
+            attributes[.paragraphStyle] = paragraph
+        }
+        let text = highlighted ?? attributed(index, attributes: attributes)
         if view.attributedString() != text { view.textStorage?.setAttributedString(text) }
         view.activateLink = { openURL($0) }
-        view.edit = { model.editBlock(index) }
+        let sourceMap = tree.sourceMaps[index]
+        view.edit = { position, event in
+            if let sourceMap, sourceMap.text == text.string, position < sourceMap.offsets.count {
+                model.editText(index, sourceMap.offsets[position], event)
+            } else {
+                model.editBlock(index)
+            }
+        }
+        view.editSource = { position in
+            if let sourceMap, sourceMap.text == text.string, position < sourceMap.offsets.count {
+                model.editPosition(index, sourceMap.offsets[position])
+            } else {
+                model.editBlock(index)
+            }
+        }
         view.setAccessibilityLabel(tree.text(index))
+        view.setAccessibilityIdentifier("markdown-inline-\(index)")
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NativeInlineTextView, context: Context) -> NSSize? {
         guard let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
-        let width = max(1, proposal.width ?? 600)
+        let proposedWidth = wraps ? proposal.width : nil
+        let width = proposedWidth.map { max(1, $0) } ?? CGFloat.greatestFiniteMagnitude
         container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
-        return NSSize(width: width, height: max(1, ceil(layout.usedRect(for: container).height)))
+        let used = layout.usedRect(for: container)
+        return NSSize(width: proposedWidth == nil ? max(1, ceil(used.width)) : width,
+            height: max(1, ceil(used.height)))
     }
 
     private func attributed(_ index: Int, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
@@ -386,22 +486,42 @@ private struct NativeInlineText: NSViewRepresentable {
     }
 }
 
-private final class NativeInlineTextView: NSTextView {
+final class NativeInlineTextView: NSTextView {
     var activateLink: (URL) -> Void = { _ in }
-    var edit: () -> Void = {}
+    var edit: (Int, NSEvent) -> Void = { _, _ in }
+    var editSource: (Int) -> Void = { _ in }
+    private var contextPosition = 0
 
     override var acceptsFirstResponder: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    override func accessibilityPerformPress() -> Bool {
+        editSource(0)
+        return true
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        contextPosition = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "Edit Markdown Source", action: #selector(revealSource), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func revealSource() { editSource(contextPosition) }
+
     override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         let index = characterIndexForInsertion(at: location)
-        if let storage = textStorage, index < storage.length,
-           let link = storage.attribute(.link, at: index, effectiveRange: nil) as? URL {
-            activateLink(link)
-        } else if !event.modifierFlags.contains(.command) {
-            edit()
+        if event.modifierFlags.contains(.command) {
+            if let storage = textStorage, index < storage.length,
+               let link = storage.attribute(.link, at: index, effectiveRange: nil) as? URL {
+                activateLink(link)
+            }
+        } else {
+            edit(index, event)
         }
     }
 }
@@ -449,7 +569,9 @@ private struct NativeImageView: View {
     var body: some View {
         Group {
             if let image {
-                Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 800).accessibilityLabel(alt)
+                Image(nsImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: image.size.width, maxHeight: min(800, image.size.height))
+                    .frame(maxWidth: .infinity, alignment: .leading).accessibilityLabel(alt)
             } else if let failure {
                 Label("\(alt): \(failure)", systemImage: "photo.badge.exclamationmark").foregroundStyle(.secondary)
             } else {
@@ -490,8 +612,13 @@ private struct NativeVideoView: View {
 
     var body: some View {
         Group {
-            if let player { VideoPlayer(player: player).frame(height: 280) }
-            if let failure { Text(failure).foregroundStyle(.secondary) }
+            if let player {
+                VideoPlayer(player: player).frame(height: 280)
+            } else if let failure {
+                Text(failure).foregroundStyle(.secondary)
+            } else {
+                ProgressView("Loading video")
+            }
         }
         .task(id: "\(model.documentURL?.absoluteString ?? ""):\(href):\(model.mediaRevision)") {
             player?.pause()
@@ -528,7 +655,8 @@ private struct NativeDiagramView: View {
     var body: some View {
         Group {
             if let image {
-                Image(nsImage: image).resizable().scaledToFit().accessibilityLabel(source)
+                Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: image.size.width)
+                    .frame(maxWidth: .infinity, alignment: .leading).accessibilityLabel(source)
             } else if let failure {
                 VStack(alignment: .leading) {
                     Text(failure).font(.caption).foregroundStyle(.secondary)
@@ -561,20 +689,21 @@ private struct NativeDiagramView: View {
 }
 
 private struct NativeCodeView: View {
-    let source: String
+    let tree: NativeRenderTree
+    let index: Int
     let language: String
     let model: NativePreviewModel
+    private var source: String { tree.text(index) }
     @Environment(\.colorScheme) private var colorScheme
-    @State private var highlighted: AttributedString?
+    @State private var highlighted: NSAttributedString?
     @State private var failure: String?
 
     var body: some View {
         VStack(alignment: .leading) {
             if let failure { Text(failure).font(.caption).foregroundStyle(.secondary) }
             ScrollView(.horizontal) {
-                Text(highlighted ?? AttributedString(source))
-                    .font(.system(size: 14, design: .monospaced))
-                    .textSelection(.disabled)
+                NativeInlineText(tree: tree, index: index, model: model, dark: colorScheme == .dark,
+                    highlighted: highlighted, wraps: false)
                     .padding(12)
             }
         }
@@ -582,18 +711,22 @@ private struct NativeCodeView: View {
         .task(id: "\(colorScheme):\(language):\(source)") {
             highlighted = nil
             failure = nil
+            let source = source
             do {
                 let dark = colorScheme == .dark
                 let spans = try await Task.detached { try highlightSource(text: source, language: language, dark: dark) }.value
                 guard !Task.isCancelled else { return }
-                let text = NSMutableAttributedString(string: source)
+                let text = NSMutableAttributedString(string: source, attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
+                    .foregroundColor: NSColor.textColor,
+                ])
                 for span in spans {
                     text.addAttribute(.foregroundColor, value: NSColor(
                         red: CGFloat(span.red) / 255, green: CGFloat(span.green) / 255,
                         blue: CGFloat(span.blue) / 255, alpha: 1),
                         range: NSRange(location: Int(span.start), length: Int(span.length)))
                 }
-                highlighted = AttributedString(text)
+                highlighted = text
             } catch {
                 guard !Task.isCancelled else { return }
                 failure = "Highlighting unavailable: \(error.localizedDescription)"

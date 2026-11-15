@@ -76,6 +76,9 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
             self.textView.scrollRangeToVisible(NSRange(location: range.location, length: 0))
             self.focus()
         }
+        livePreview.interact = { [weak self] position, event in
+            self?.interactWithSource(at: position, event: event)
+        }
         textView.delegate = self
         textView.openLink = { [weak self] location, newTab in
             guard let self, let document = self.document, document.kind == .markdown else { return false }
@@ -192,6 +195,22 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
 
     func focus() {
         textView.window?.makeFirstResponder(textView)
+    }
+
+    private func interactWithSource(at position: Int, event: NSEvent) {
+        guard let window = textView.window, let rect = textView.insertionRect(at: position) else {
+            preview.notice = "Could not locate the source insertion point."
+            preview.logger.error("Could not locate source insertion point at \(position).")
+            return
+        }
+        let clip = scrollView.contentView
+        let delta = rect.midY - textView.convert(event.locationInWindow, from: nil).y
+        var bounds = clip.bounds
+        bounds.origin.y += delta
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scrollView.reflectScrolledClipView(clip)
+        focus()
+        textView.trackRenderedSelection(at: position, event: event, in: window)
     }
 
     func snapshot(docId: Int) async -> EditorSnapshot? {
@@ -627,6 +646,60 @@ final class NativeTextView: NSTextView {
     var lineSeparator = "\n"
     var openLink: (Int, Bool) -> Bool = { _, _ in false }
     var updateLiveViews: () -> Void = {}
+
+    func insertionRect(at position: Int) -> NSRect? {
+        guard let layout = layoutManager, let storage = textStorage, let container = textContainer,
+              position >= 0, position <= storage.length else { return nil }
+        layout.ensureLayout(for: container)
+        if position == storage.length, layout.extraLineFragmentTextContainer != nil {
+            return layout.extraLineFragmentRect.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+        }
+        let count = layout.getLineFragmentInsertionPoints(forCharacterAt: position,
+            alternatePositions: false, inDisplayOrder: false, positions: nil, characterIndexes: nil)
+        var points = Array(repeating: CGFloat.zero, count: count)
+        var indexes = Array(repeating: 0, count: count)
+        layout.getLineFragmentInsertionPoints(forCharacterAt: position,
+            alternatePositions: false, inDisplayOrder: false, positions: &points, characterIndexes: &indexes)
+        guard let index = indexes.firstIndex(of: position) else { return nil }
+        let glyph = layout.glyphIndexForCharacter(at: min(position, storage.length - 1))
+        let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return NSRect(x: textContainerOrigin.x + line.minX + points[index],
+            y: textContainerOrigin.y + line.minY, width: 0, height: line.height)
+    }
+
+    func trackRenderedSelection(at position: Int, event: NSEvent, in window: NSWindow) {
+        let granularity: NSSelectionGranularity = event.clickCount >= 3
+            ? .selectByParagraph : event.clickCount == 2 ? .selectByWord : .selectByCharacter
+        let clicked = selectionRange(forProposedRange: NSRange(location: position, length: 0), granularity: granularity)
+        let previous = selectedRange()
+        let anchor = event.modifierFlags.contains(.shift)
+            ? NSRange(location: selectionAffinity == .upstream ? NSMaxRange(previous) : previous.location, length: 0)
+            : clicked
+
+        func select(_ range: NSRange, tracking: Bool) {
+            let selected = NSUnionRange(anchor, range)
+            setSelectedRange(selected, affinity: range.location < anchor.location ? .upstream : .downstream,
+                stillSelecting: tracking)
+        }
+
+        select(clicked, tracking: true)
+        var drag: NSEvent?
+        window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: 0.05, mode: .eventTracking) { next, stop in
+            if next?.type == .leftMouseUp {
+                stop.pointee = true
+                return
+            }
+            if let next { drag = next }
+            guard let drag else { return }
+            let scrolled = self.autoscroll(with: drag)
+            guard next != nil || scrolled else { return }
+            let point = self.convert(drag.locationInWindow, from: nil)
+            let position = self.characterIndexForInsertion(at: point)
+            select(self.selectionRange(forProposedRange: NSRange(location: position, length: 0), granularity: granularity),
+                tracking: true)
+        }
+        setSelectedRange(selectedRange(), affinity: selectionAffinity, stillSelecting: false)
+    }
 
     override func layout() {
         super.layout()

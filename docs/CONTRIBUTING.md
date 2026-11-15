@@ -30,6 +30,12 @@ The Xcode project is generated and ignored. Edit `project.yml`, not the project.
 
 Rendered inline labels use read-only `NSTextView` instances for character-level link hit testing, including Command/Shift modifiers. Their attributed text and math attachments are display-only; they never enter the editable document's text storage.
 
+Rendered text positions map through parser leaves to original UTF-16 offsets, including hidden Markdown markers, Unicode, entities and code fences. Align transformed text only within its parser leaf, never by searching the document for a repeated label. Selection uses the source editor's word/paragraph boundaries and window event tracking. Keep the clicked row pinned across deferred native-view measurements; release the pin on edits, navigation or user scrolling. Glyph concealment changes must invalidate layout as well as glyphs.
+
+Raw HTML provenance is added to a rendering copy before sanitization. Generated attributes precede user attributes; never trust document-provided `data-sourcepos` or origin IDs. Exact HTML text spans retain original UTF-16 ranges, including CRLF and entities. When parser literals cannot be aligned with their original range, retain block-level editing rather than guess. The controller validates every mapped edit against its current enclosing block and applies pending source shifts.
+
+Keep line-fragment block lookup indexed, not a scan of all document blocks per line. Invalidate only changed glyph/layout ranges when measured heights change. Concealed source backgrounds must not paint behind rendered widgets; the nonisolated TextKit drawing hook reads a lock-protected concealment snapshot.
+
 The native build phase declares the generated Swift/C/modulemap and Rust archive as outputs. Keep these declarations: Xcode must regenerate bindings before Swift dependency scanning/compilation, or an API change can link stale Swift bindings to a new archive and crash on UniFFI's checksum check.
 
 ## Rules worth knowing
@@ -47,6 +53,14 @@ The native build phase declares the generated Swift/C/modulemap and Rust archive
 **Swift concurrency.** The app defaults to main-actor isolation. Pure values used in background tasks must be `nonisolated` and `Sendable`. Do not parse, highlight code or render diagrams on each keystroke on the main actor.
 
 **Dependencies.** Reuse the existing libraries. Review the Cargo lockfile and exact SwiftPM version when updating dependencies. Do not add a browser or Node-based build step.
+
+Syntax highlighting uses syntect with `two-face`'s bat-curated grammars; syntect's default set omits Swift and TypeScript. Keep `syntect-fancy` aligned with syntect's pure-Rust regex backend. Tests check actual native token colors in both appearances, not just successful highlighting calls.
+
+When updating `two-face`, regenerate the bundled [syntax notices](../MarkdownBrowser/Resources/Syntax-Notices.txt) using the updated crate's `LICENSE-MIT`:
+
+```sh
+cargo run --locked --manifest-path native/Cargo.toml --example syntax_notices -- /path/to/two-face/LICENSE-MIT > MarkdownBrowser/Resources/Syntax-Notices.txt
+```
 
 ## Common changes
 
@@ -67,21 +81,21 @@ xcodegen generate
 xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build test
 ```
 
-Swift tests cover byte preservation, source styling, links/anchors, preview controls and layout, path permissions, search, saves/conflicts, sidebar navigation and tabs. Rust tests cover parser source ranges, sanitized HTML, code highlights, diagrams, regex semantics and the recorded search corpus.
+Swift tests cover byte preservation, source styling, links/anchors, preview controls and layout, scoped HTML/widget source targets, accessibility edit actions, native arrow-key handoff, path permissions, search, saves/conflicts, sidebar navigation and tabs. Light/dark window captures and visible 10k-line timing/RSS reports are recorded as test-result attachments. Rust tests cover parser source ranges, provenance spoofing and HTML text preservation through sanitization, code highlights, diagrams, regex semantics and the recorded search corpus.
 
 Open `Samples/` for the manual checks:
 
 1. Inspect tables, images, alerts, emoji, footnotes, details, math and diagrams in light/dark mode.
-2. Click rendered blocks to edit, toggle a task, undo and save; compare bytes with a copy. Reveal all source with Command-U; resize and scroll through the same editor.
+2. Click rendered prose, code and table cells to edit at the clicked position. Check double-click, Shift-click, dragging and scroll stability. Toggle a task, undo and save; compare bytes with a copy. Reveal all source with Command-U; resize and scroll through the same editor.
 3. Command-click `docs/guide.md#installation` from source and rendered text; test Shift for a new tab and history navigation.
 4. Change the file externally, both with and without local edits; check reload/conflict handling.
 5. Test real IME composition, drag/drop, VoiceOver and keyboard-only navigation.
-6. Measure 10k-line typing with a visible window, layout and preview updates. The automated insertion timing excludes display/layout and is not an end-to-end performance claim.
+6. Run `visibleTenThousandLineEditingReportsFrameAndReparseLatency()` for visible 10k-line layout/draw, debounced-reparse and process RSS measurements. Its three samples are not a percentile benchmark or hardware presentation measurement. The older insertion-only test still excludes display/layout. Use Instruments for sustained typing, retained-memory and large-folder profiling.
 7. Test find/replace and Find in Files in each scope, with wrap on/off.
 8. Test resource permission requests and root-relative images after changing the sidebar folder.
 9. Run `cli/mdb` with the current directory and explicit paths.
 
-Rendered-block clicks currently reveal the beginning of that block, not the exact rendered character. Math/Mermaid and HTML/CSS fidelity differ from browser renderers; keep the [migration status](native-migration-plan.md) and README honest about limitations.
+Images/diagrams and the Edit Markdown Source context/accessibility actions target their source construct. Unmapped HTML retains an enclosing-block fallback. Math/Mermaid and HTML/CSS fidelity differ from browser renderers; keep the [migration status](native-migration-plan.md) and README honest about limitations. Automated accessibility actions and marked-text tests do not establish live VoiceOver or physical IME parity.
 
 ## Releasing
 

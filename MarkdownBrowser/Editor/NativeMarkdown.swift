@@ -40,6 +40,118 @@ extension MarkdownNode {
     nonisolated var range: NSRange { NSRange(location: Int(start), length: Int(length)) }
 }
 
+nonisolated struct NativeRenderedSourceMap: Sendable {
+    let text: String
+    let offsets: [Int]
+
+    static func make(index: Int, nodes: [MarkdownNode], children: [[Int]], source: NSString) -> Self {
+        let node = nodes[index]
+        switch node.kind {
+        case .text, .code:
+            var range = node.range
+            if node.kind == .code {
+                let raw = source.substring(with: range)
+                let fence = raw.prefix { $0 == "`" }.utf16.count
+                if fence > 0, range.length >= 2 * fence {
+                    range.location += fence
+                    range.length -= 2 * fence
+                }
+            }
+            return aligned(node.text, range: range, source: source)
+        case .softBreak, .lineBreak:
+            return Self(text: "\n", offsets: [node.range.location, NSMaxRange(node.range)])
+        case .codeBlock:
+            var range = node.range
+            let first = source.lineRange(for: NSRange(location: range.location, length: 0))
+            let opening = source.substring(with: NSIntersectionRange(first, range)).trimmingCharacters(in: .whitespaces)
+            if opening.hasPrefix("```") || opening.hasPrefix("~~~") {
+                let last = source.lineRange(for: NSRange(location: NSMaxRange(range) - 1, length: 0))
+                let closing = source.substring(with: NSIntersectionRange(last, range)).trimmingCharacters(in: .whitespaces)
+                let fence = String(opening.prefix { $0 == opening.first })
+                let closingFence = closing.prefix { $0 == opening.first }
+                let isClosing = closingFence.count >= fence.count
+                    && closing.dropFirst(closingFence.count).trimmingCharacters(in: .whitespaces).isEmpty
+                let end = last.location > first.location && isClosing ? last.location : NSMaxRange(range)
+                range = NSRange(location: NSMaxRange(first), length: max(0, end - NSMaxRange(first)))
+            }
+            return aligned(node.text, range: range, source: source)
+        case .emoji, .footnoteReference:
+            return atomic(node.text, range: node.range)
+        case .math:
+            return atomic("\u{fffc}", range: node.range)
+        case .html:
+            return Self(text: "", offsets: [node.range.location])
+        default:
+            var text = ""
+            var offsets = [node.range.location]
+            for child in children[index] {
+                let part = make(index: child, nodes: nodes, children: children, source: source)
+                guard !part.text.isEmpty else { continue }
+                text += part.text
+                offsets.removeLast()
+                offsets.append(contentsOf: part.offsets)
+            }
+            return Self(text: text, offsets: offsets)
+        }
+    }
+
+    private static func atomic(_ text: String, range: NSRange) -> Self {
+        var offsets = Array(repeating: range.location, count: text.utf16.count + 1)
+        offsets[offsets.count - 1] = NSMaxRange(range)
+        return Self(text: text, offsets: offsets)
+    }
+
+    static func aligned(_ text: String, range: NSRange, source: NSString) -> Self {
+        guard range.location >= 0, NSMaxRange(range) <= source.length else {
+            preconditionFailure("Parser source range is outside the document")
+        }
+        let raw = source.substring(with: range)
+        if raw == text, raw.utf16.count == text.utf16.count {
+            return Self(text: text, offsets: Array(range.location...NSMaxRange(range)))
+        }
+        // Align only within a parser leaf, never by searching the document for repeated rendered text.
+        let original = Array(raw)
+        let rendered = Array(text)
+        let changes = rendered.difference(from: original)
+        var removed = Set<Int>()
+        var inserted = Set<Int>()
+        for change in changes {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
+            }
+        }
+        var starts = [range.location]
+        var sourceOffset = range.location
+        for character in original {
+            sourceOffset += character.utf16.count
+            starts.append(sourceOffset)
+        }
+        var positions = Array(repeating: range.location, count: rendered.count + 1)
+        var originals = original.indices.filter { !removed.contains($0) }.makeIterator()
+        var previous = range.location
+        for index in rendered.indices {
+            if !inserted.contains(index), let originalIndex = originals.next() {
+                positions[index] = starts[originalIndex]
+                previous = starts[originalIndex + 1]
+            } else {
+                positions[index] = previous
+            }
+        }
+        positions[rendered.count] = NSMaxRange(range)
+        var offsets: [Int] = []
+        for index in rendered.indices {
+            let count = rendered[index].utf16.count
+            let span = positions[index + 1] - positions[index]
+            for unit in 0..<count {
+                offsets.append(positions[index] + (span == count ? unit : 0))
+            }
+        }
+        offsets.append(NSMaxRange(range))
+        return Self(text: text, offsets: offsets)
+    }
+}
+
 struct NativeMarkdownStyle: Equatable {
     let range: NSRange
     let kind: MarkdownKind

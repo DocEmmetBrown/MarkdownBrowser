@@ -7,8 +7,9 @@ A native macOS app for browsing and editing Markdown, built with Swift and Rust.
 - **Browse files and folders**: open a single file or a folder; folders get a sidebar file tree, sorted by name like Finder, that updates when files change on disk, stays fast with tens of thousands of files, and opens on the folder's README. Double-click a folder to open it in the sidebar; go back up with the arrow above the tree (or ⌥⌘↑), or pick any enclosing folder from the folder menu next to it. Going above the folder you opened asks for access to it first.
 - **Native Markdown preview**: tables, interactive task lists, `> [!NOTE]` alerts, footnotes, `:emoji:` shortcodes, math (`$…$`, `$$…$$`), sanitized HTML (including `<details>` wrapping Markdown), images, video, and syntax-highlighted code. No browser engine or JavaScript runtime.
 - **Mermaid diagrams**: ```` ```mermaid ```` blocks render as diagrams and switch theme with light/dark mode.
-- **In-place editing**: one editing pane renders inactive blocks; click a rendered block to reveal and edit its source. Inline emphasis, code and link markers appear when the selection touches them. Edits change exactly the characters you type: line endings, encoding and formatting elsewhere are preserved byte for byte.
+- **In-place editing**: one editing pane renders inactive blocks; click rendered text to place the caret at its matching source position. Double-click selects a word; Shift-click and dragging extend selection. Revealing source keeps the clicked row anchored while surrounding blocks resize. Inline emphasis, code and link markers appear when the selection touches them. Edits change exactly the characters you type: line endings, encoding and formatting elsewhere are preserved byte for byte.
 - **View Source**: toggle (⌘U) to reveal all Markdown syntax in the same editor, sharing selection and undo history.
+- **Edit rendered content**: images and diagrams target their own source construct. Right-click rendered content for **Edit Markdown Source**; rendered labels and widgets expose the same accessibility action. Raw HTML text uses scoped source mappings where available.
 - **Links**: ⌘-click source or rendered links to follow; add ⇧ to open in a new tab. Links to other files open in the app, `#heading` links scroll, web links open in your browser.
 - **Other files**: text and code open as editable source with syntax highlighting; images, videos and everything else use native viewers (Quick Look for the rest).
 - **Find & replace**: a find bar for the current file, and Find in Files across the current file, all open files, or the whole folder. Options for match case, regex, and wrap around; Replace All with confirmation. Both use JavaScript regex syntax and match the same way, and patterns can span lines (`foo\nbar`); regex replacements can use `$&`, `$1` and `\n`.
@@ -98,11 +99,12 @@ The link points into the app, so reinstall it if you move the app.
 
 ## Known limitations
 
-- Clicking a rendered block starts editing at its source beginning, rather than mapping the click to an exact rendered character. Rendered appearance uses native styles, not GitHub's CSS.
+- Pictures do not map arbitrary pixels to source characters. Unmapped or ambiguous HTML falls back to the enclosing source block. Rendered appearance uses native styles, not GitHub's CSS.
 - SwiftMath and the Rust Mermaid renderer do not support every KaTeX command or Mermaid diagram. Rendering errors show the source and an error (math retains its source and logs the error).
 - Raw HTML supports native text, lists, tables, links, images, video and disclosure groups; CSS, scripts and arbitrary browser layout are not supported. SVG images do not load external or embedded image references.
+- Code fences use their language tag, including Swift and TypeScript, through the extended native grammar set. Untagged or unsupported languages remain plain text; there is no automatic language detection.
 - Images are limited to 16 MB and 40 million decoded pixels; diagrams to 100 KB of source. Preview and source highlighting are disabled above 5 MB.
-- Parsing is debounced and runs off the main thread after edits, but is not incremental. End-to-end 10k-line display latency and VoiceOver/real-IME parity still require manual validation.
+- Parsing is debounced and runs off the main thread after edits, but is not incremental. A visible 10k-line Debug fixture measured 46-65 ms through synchronous layout/drawing and 2.3-2.5 seconds through the debounced reparse; the 16 ms goal is not met. Live VoiceOver and physical IME testing remain manual checks; see the [validation status](docs/native-migration-plan.md).
 
 ## Project layout
 

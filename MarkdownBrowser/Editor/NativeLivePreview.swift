@@ -1,6 +1,7 @@
 import AppKit
 import MdbCore
 import SwiftUI
+import os
 
 nonisolated struct NativeInlineConcealment {
     let range: NSRange
@@ -38,6 +39,7 @@ nonisolated struct NativeInlineConcealment {
 nonisolated struct NativeLiveBlock: Equatable {
     var range: NSRange
     let renderIndex: Int
+    var sourceShift = 0
 
     static func blocks(source: String, markdown: NativeMarkdown) -> [NativeLiveBlock] {
         let text = source as NSString
@@ -114,6 +116,8 @@ nonisolated struct NativeLiveBlock: Equatable {
 final class NativeLiveLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     private(set) var concealed = IndexSet()
     private(set) var blocks: [Int: NSSize] = [:]
+    private var blockStarts = IndexSet()
+    private nonisolated let backgroundConcealment = OSAllocatedUnfairLock(initialState: IndexSet())
 
     nonisolated override init() { super.init() }
     nonisolated required init?(coder: NSCoder) { super.init(coder: coder) }
@@ -128,10 +132,22 @@ final class NativeLiveLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             blocks[range.location] = size
         }
         guard self.concealed != concealed || self.blocks != blocks else { return }
+        var changed = self.concealed.symmetricDifference(concealed)
+        for key in Set(self.blocks.keys).union(blocks.keys) where self.blocks[key] != blocks[key] {
+            changed.insert(key)
+        }
         self.concealed = concealed
+        let snapshot = concealed
+        backgroundConcealment.withLock { $0 = snapshot }
         self.blocks = blocks
-        let range = NSRange(location: 0, length: textStorage?.length ?? 0)
+        blockStarts = IndexSet(blocks.keys)
+        let length = textStorage?.length ?? 0
+        let first = min(changed.first ?? 0, length)
+        let end = min((changed.last ?? 0) + 1, length)
+        let range = NSRange(location: first, length: max(0, end - first))
         invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
+        invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+        invalidateDisplay(forCharacterRange: range)
     }
 
     func layoutManager(_ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
@@ -155,6 +171,17 @@ final class NativeLiveLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return concealed.contains(charIndex) ? .zeroAdvancement : action
     }
 
+    nonisolated override func drawBackground(forGlyphRange glyphs: NSRange, at origin: NSPoint) {
+        let hidden = backgroundConcealment.withLock { $0 }
+        let characters = characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        let visible = IndexSet(integersIn: characters.location..<NSMaxRange(characters)).subtracting(hidden)
+        for run in visible.rangeView {
+            let range = glyphRange(forCharacterRange: NSRange(location: run.lowerBound, length: run.count),
+                actualCharacterRange: nil)
+            super.drawBackground(forGlyphRange: NSIntersectionRange(range, glyphs), at: origin)
+        }
+    }
+
     func layoutManager(_ layoutManager: NSLayoutManager, boundingBoxForControlGlyphAt glyphIndex: Int,
         for textContainer: NSTextContainer, proposedLineFragment proposedRect: NSRect,
         glyphPosition: NSPoint, characterIndex: Int) -> NSRect {
@@ -165,7 +192,8 @@ final class NativeLiveLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         lineFragmentUsedRect: UnsafeMutablePointer<NSRect>, baselineOffset: UnsafeMutablePointer<CGFloat>,
         in textContainer: NSTextContainer, forGlyphRange glyphRange: NSRange) -> Bool {
         let range = characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-        guard let height = blocks.first(where: { NSLocationInRange($0.key, range) })?.value.height else { return false }
+        guard let start = blockStarts.integerGreaterThanOrEqualTo(range.location),
+              start < NSMaxRange(range), let height = blocks[start]?.height else { return false }
         lineFragmentRect.pointee.size.height = height + 6
         lineFragmentUsedRect.pointee.size.height = height + 6
         baselineOffset.pointee = height
@@ -227,7 +255,10 @@ final class NativeLivePreviewController: NSObject {
     private var updating = false
     private var pendingEdit: (NSRange, Int)?
     private var generation = 0
+    private var interactionLocation: Int?
+    private var pinnedCaret: (position: Int, viewportY: CGFloat)?
     var reveal: (NSRange) -> Void = { _ in }
+    var interact: (Int, NSEvent) -> Void = { _, _ in }
 
     init(textView: NativeTextView, layout: NativeLiveLayoutManager, model: NativePreviewModel) {
         self.textView = textView
@@ -236,6 +267,21 @@ final class NativeLivePreviewController: NSObject {
         super.init()
         textView.updateLiveViews = { [weak self] in self?.updateViewport() }
         model.editBlock = { [weak self] index in self?.revealRenderedBlock(index) }
+        model.editPosition = { [weak self] index, position in
+            guard let self, let position = self.sourcePosition(index, offset: position) else { return }
+            self.reveal(NSRange(location: position, length: 0))
+        }
+        model.editText = { [weak self] index, position, event in
+            guard let self, let position = self.sourcePosition(index, offset: position) else { return }
+            if let textView = self.textView {
+                self.pinnedCaret = (position, textView.convert(event.locationInWindow, from: nil).y - textView.visibleRect.minY)
+            }
+            self.interactionLocation = position
+            self.updateSelection()
+            self.interact(position, event)
+            self.interactionLocation = nil
+            self.updateSelection()
+        }
     }
 
     func observe(_ clipView: NSClipView) {
@@ -251,6 +297,8 @@ final class NativeLivePreviewController: NSObject {
         markers = []
         tree = nil
         pendingEdit = nil
+        pinnedCaret = nil
+        interactionLocation = nil
         heights = [:]
         removeViews()
         layout.present([])
@@ -274,13 +322,17 @@ final class NativeLivePreviewController: NSObject {
     }
 
     func textChanged() {
+        pinnedCaret = nil
         guard let (range, length) = pendingEdit else { reset(); return }
         pendingEdit = nil
         let delta = length - range.length
         let shift: (NativeLiveBlock) -> NativeLiveBlock? = { plan in
             if NSIntersectionRange(plan.range, range).length > 0 || NSLocationInRange(range.location, plan.range) { return nil }
             var plan = plan
-            if plan.range.location >= NSMaxRange(range) { plan.range.location += delta }
+            if plan.range.location >= NSMaxRange(range) {
+                plan.range.location += delta
+                plan.sourceShift += delta
+            }
             return plan
         }
         plans = plans.compactMap(shift)
@@ -296,16 +348,22 @@ final class NativeLivePreviewController: NSObject {
 
     func updateSelection() {
         guard let textView, !textView.hasMarkedText() else { return }
+        if interactionLocation == nil, let pinnedCaret,
+           textView.selectedRange() != NSRange(location: pinnedCaret.position, length: 0) {
+            self.pinnedCaret = nil
+        }
         let source = textView.string as NSString
         let selections = textView.selectedRanges.map(\.rangeValue).map {
             source.lineRange(for: NSIntersectionRange($0, NSRange(location: 0, length: source.length)))
         }
         displayed = model.isVisible ? plans.filter { plan in
-            !selections.contains { selection in
+            if let interactionLocation,
+               interactionLocation >= plan.range.location && interactionLocation <= NSMaxRange(plan.range) { return false }
+            return !selections.contains { selection in
                 NSIntersectionRange(plan.range, selection).length > 0 || NSLocationInRange(selection.location, plan.range)
             }
         } : []
-        markers = model.isVisible ? concealments.filter { inline in
+        markers = model.isVisible && interactionLocation == nil ? concealments.filter { inline in
             !textView.selectedRanges.contains { selected in
                 let range = selected.rangeValue
                 return NSIntersectionRange(inline.range, range).length > 0
@@ -326,25 +384,84 @@ final class NativeLivePreviewController: NSObject {
 
     private func present() {
         guard let textView else { return }
+        let wasUpdating = updating
+        updating = true
+        defer { updating = wasUpdating }
+        let anchor = viewportAnchor()
         let available = (textView.textContainer?.containerSize.width ?? 600)
             - 2 * (textView.textContainer?.lineFragmentPadding ?? 5)
         width = max(40, min(available, textView.bounds.width - 2 * textView.textContainerInset.width))
         layout.present(displayed.map { ($0.range, NSSize(width: width, height: heights[$0.renderIndex] ?? 28)) },
             concealing: markers)
+        if let (character, viewportY) = anchor, let scrollView = textView.enclosingScrollView {
+            layout.ensureLayout(forCharacterRange: NSRange(location: character, length: 1))
+            let glyph = layout.glyphIndexForCharacter(at: character)
+            let y = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).midY
+            let clip = scrollView.contentView
+            var bounds = clip.bounds
+            bounds.origin.y = y + textView.textContainerOrigin.y - viewportY
+            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+            scrollView.reflectScrolledClipView(clip)
+        }
     }
 
-    @objc private func scrolled() { updateViewport() }
+    private func viewportAnchor() -> (Int, CGFloat)? {
+        guard let textView, let container = textView.textContainer,
+              let length = textView.textStorage?.length, length > 0 else { return nil }
+        if let pinnedCaret, pinnedCaret.position < length { return (pinnedCaret.position, pinnedCaret.viewportY) }
+        let origin = textView.textContainerOrigin
+        let visible = textView.visibleRect
+        let selection = textView.selectedRange()
+        var character = min(textView.selectionAffinity == .upstream ? selection.location : NSMaxRange(selection), length - 1)
+        var glyph = layout.glyphIndexForCharacter(at: character)
+        var line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        if layout.concealed.contains(character) || !visible.intersects(line.offsetBy(dx: origin.x, dy: origin.y)) {
+            let point = NSPoint(x: container.lineFragmentPadding, y: max(0, visible.minY - origin.y))
+            glyph = layout.glyphIndex(for: point, in: container)
+            guard glyph < layout.numberOfGlyphs else { return nil }
+            character = layout.characterIndexForGlyph(at: glyph)
+            line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        }
+        return (character, line.midY + origin.y - visible.minY)
+    }
+
+    @objc private func scrolled() {
+        if !updating, interactionLocation == nil,
+           let type = NSApp.currentEvent?.type,
+           type == .scrollWheel || type == .leftMouseDragged || type == .leftMouseDown || type == .keyDown {
+            pinnedCaret = nil
+        }
+        updateViewport()
+    }
 
     private func revealRenderedBlock(_ index: Int) {
-        guard let tree else { return }
+        guard let plan = plan(containing: index) else { return }
+        let offset = tree?.sourceRanges[index]?.location ?? plan.range.location - plan.sourceShift
+        guard let position = sourcePosition(index, offset: offset) else { return }
+        reveal(NSRange(location: position, length: 0))
+    }
+
+    private func sourcePosition(_ index: Int, offset: Int) -> Int? {
+        guard let plan = plan(containing: index) else { return nil }
+        let position = offset + plan.sourceShift
+        guard position >= plan.range.location, position <= NSMaxRange(plan.range) else {
+            model.notice = "Could not map the rendered content to its source."
+            model.logger.error("Rendered position is outside its source block.")
+            return nil
+        }
+        return position
+    }
+
+    private func plan(containing index: Int) -> NativeLiveBlock? {
+        guard let tree else { return nil }
         var index: Int? = index
         while let current = index {
             if let plan = plans.first(where: { $0.renderIndex == current }) {
-                reveal(plan.range)
-                return
+                return plan
             }
             index = tree.nodes[current].parent.map(Int.init)
         }
+        return nil
     }
 
     func updateViewport() {

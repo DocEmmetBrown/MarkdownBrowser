@@ -86,16 +86,21 @@ impl SourceMap {
         self.utf16.get(byte).copied()
     }
 
-    fn range(&self, position: Sourcepos) -> (u32, u32) {
+    pub(crate) fn bytes(&self, position: Sourcepos) -> std::ops::Range<usize> {
         let offset = |line: usize, column: usize| {
             self.lines
                 .get(line.saturating_sub(1))
                 .map(|&start| (start + column).min(self.utf16.len() - 1))
                 .unwrap_or(self.utf16.len() - 1)
         };
-        let start =
-            self.utf16[offset(position.start.line, position.start.column.saturating_sub(1))];
-        let end = self.utf16[offset(position.end.line, position.end.column)];
+        offset(position.start.line, position.start.column.saturating_sub(1))
+            ..offset(position.end.line, position.end.column)
+    }
+
+    pub(crate) fn range(&self, position: Sourcepos) -> (u32, u32) {
+        let bytes = self.bytes(position);
+        let start = self.utf16[bytes.start];
+        let end = self.utf16[bytes.end];
         (start, end.saturating_sub(start))
     }
 }
