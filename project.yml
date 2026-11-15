@@ -34,6 +34,7 @@ targets:
     sources:
       - path: native/generated/MdbCore.swift
         optional: true
+        # Explicit file entries remain compile sources before generated bindings exist.
         type: file
     preBuildScripts:
       - name: Build native core

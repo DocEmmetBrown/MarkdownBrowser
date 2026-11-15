@@ -45,7 +45,11 @@ nonisolated final class SearchEngine {
     }
 
     private func searcher(_ options: SearchOptions) -> Searcher {
-        if let cached, cached.options == options { return cached.searcher }
+        // Swift String equality normalizes canonically equivalent sequences; regex patterns do not.
+        if let cached, cached.options == options,
+           cached.options.query.utf8.elementsEqual(options.query.utf8) {
+            return cached.searcher
+        }
         let searcher = Searcher(
             query: SearchQuery(search: options.query, caseSensitive: options.caseSensitive, regexp: options.regex))
         cached = (options, searcher)

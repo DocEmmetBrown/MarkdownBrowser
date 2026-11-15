@@ -204,6 +204,24 @@ import Testing
         #expect(engine.validate(SearchOptions(query: "(", regex: true)) != nil)
     }
 
+    @Test func regexCacheDistinguishesCanonicalUnicodeSequences() {
+        let engine = SearchEngine()
+        let source = "é e\u{301}"
+        for (query, column, length, replacement) in [
+            ("é", 0, 1, "X e\u{301}"),
+            ("e\u{301}", 2, 2, "é X"),
+            ("é", 0, 1, "X e\u{301}"),
+        ] {
+            let options = SearchOptions(query: query, caseSensitive: true, regex: true)
+            #expect(engine.matches(in: source, lineSeparator: "\n", options: options, limit: 10) == [
+                SearchEngine.Match(line: 1, column: column, length: length)
+            ])
+            let result = engine.replace(in: source, lineSeparator: "\n", options: options, template: "X")
+            #expect(result.text == replacement)
+            #expect(result.count == 1)
+        }
+    }
+
     @Test func matchesAcrossLines() throws {
         let text = "intro\r\nfoo\r\nbar baz\r\n"
         let hits = FolderSearch.search(

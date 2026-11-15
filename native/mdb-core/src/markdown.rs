@@ -5,7 +5,7 @@ use comrak::{
     nodes::{AstNode, ListType, NodeValue, Sourcepos},
     parse_document,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use unicode_general_category::{GeneralCategory, get_general_category};
 
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
@@ -114,6 +114,7 @@ pub fn parse_markdown(text: String) -> Vec<MarkdownNode> {
     let mut output = Vec::new();
     let mut stack = vec![(root, None)];
     let mut slugs = HashSet::new();
+    let mut next_suffixes = HashMap::new();
     while let Some((node, parent)) = stack.pop() {
         let data = node.data.borrow();
         let (start, length) = map.range(data.sourcepos);
@@ -134,10 +135,10 @@ pub fn parse_markdown(text: String) -> Vec<MarkdownNode> {
                 record.level = u32::from(heading.level);
                 let base = github_slug(&plain_text(node));
                 let mut slug = base.clone();
-                let mut count = 0;
+                let count = next_suffixes.entry(base.clone()).or_insert(1_usize);
                 while !slugs.insert(slug.clone()) {
-                    count += 1;
                     slug = format!("{base}-{count}");
+                    *count += 1;
                 }
                 record.destination = slug;
                 MarkdownKind::Heading
@@ -321,7 +322,7 @@ mod tests {
 
     #[test]
     fn headings_have_structural_duplicate_slugs() {
-        let source = "# Hello **world**\n\n```\n# Hello world\n```\n\n> # Hello world\n\nHello world\n===\n\n# Hello world-1\n";
+        let source = "# Hello **world**\n\n```\n# Hello world\n```\n\n> # Hello world\n\nHello world\n===\n\n# Hello world-1\n\n# Hello world-4\n\n# Hello world\n\n# Hello world\n\n# Hello world-1\n";
         let headings: Vec<_> = parse_markdown(source.into())
             .into_iter()
             .filter(|node| node.kind == MarkdownKind::Heading)
@@ -333,7 +334,11 @@ mod tests {
                 "hello-world",
                 "hello-world-1",
                 "hello-world-2",
-                "hello-world-1-1"
+                "hello-world-1-1",
+                "hello-world-4",
+                "hello-world-3",
+                "hello-world-5",
+                "hello-world-1-2"
             ]
         );
     }

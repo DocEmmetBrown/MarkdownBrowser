@@ -92,7 +92,9 @@ There is one editing pane. Clicking rendered prose, code or table text maps the 
    compiles `mdb-core` for `aarch64-apple-darwin` into `libmdb_core.a`.
 3. UniFFI generates ignored Swift bindings, a C header and a module map under
    `native/generated/`. The build declares these outputs so Swift never links
-   stale bindings against a changed Rust API.
+   stale bindings against a changed Rust API. XcodeGen registers the Swift path
+   with `type: file`, keeping it in compile sources even before it exists on a
+   clean checkout.
 4. Xcode compiles the wrappers and links the Rust archive into the app. At
    runtime, calls are in-process native calls through the generated bindings:
    there is no separate Rust executable, JSON message channel or web bridge.
@@ -121,11 +123,11 @@ network media.
 
 - TextKit 1 provides the public glyph-generation delegate used for presentation-only concealment and layout reservation. Source characters are never replaced with attachments or rendered text. Images, video, diagrams and math target their source construct rather than infer characters from pixels. Raw HTML text maps through scoped provenance; unsupported or ambiguous fragments retain an enclosing-block fallback. Command-click follows rendered and source links.
 - GitHub-flavored Markdown uses native styles, not pixel-identical GitHub rendering.
-- Comrak full parses are debounced and run off-main after edits. Changed source styles are applied selectively, but parsing is not incremental.
+- Comrak full parses are debounced and run off-main after edits. Changed source styles are applied selectively, but parsing is not incremental. Heading slugs retain per-base suffix counters and an occupied-slug set to avoid quadratic duplicate-heading work while preserving collisions with explicitly suffixed headings.
 - syntect highlights code with the extended two-face grammars.
 - HTML supports the implemented native elements, not arbitrary CSS layout.
 - SwiftMath and the Rust Mermaid renderer support a subset of expressions and diagrams. Unsupported expressions/diagrams retain source; diagram failures show an error and math failures are logged.
-- The shared search corpus checks validation, Unicode and multiline matches, and replacements in both Rust and Swift.
+- The shared search corpus checks validation, Unicode and multiline matches, and replacements in both Rust and Swift. Cached searchers compare exact UTF-8 query sequences as well as options: Swift's canonically equivalent string equality is not sufficient for regex patterns.
 
 Background parsing on edits does not make every entry path asynchronous:
 initial loading and explicit `ensureMarkdown()` calls can parse synchronously.
