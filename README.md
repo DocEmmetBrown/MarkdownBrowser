@@ -1,15 +1,15 @@
 # MarkdownBrowser
 
-A native macOS app for browsing and editing Markdown. Open a file or a whole folder, read it rendered the way GitHub renders it, and edit it in place without the app ever reformatting your file.
+A native macOS app for browsing and editing Markdown, built with Swift and Rust. Open a file or a whole folder and edit GitHub-flavored Markdown in place, without the app ever reformatting your file.
 
 ## Features
 
 - **Browse files and folders**: open a single file or a folder; folders get a sidebar file tree, sorted by name like Finder, that updates when files change on disk, stays fast with tens of thousands of files, and opens on the folder's README. Double-click a folder to open it in the sidebar; go back up with the arrow above the tree (or ⌥⌘↑), or pick any enclosing folder from the folder menu next to it. Going above the folder you opened asks for access to it first.
-- **GitHub-style rendering**: GitHub's stylesheet and colors; tables, task lists, `> [!NOTE]` alerts, footnotes, `:emoji:` shortcodes, math (`$…$`, `$$…$$`), raw HTML (sanitized, including `<details>` wrapping Markdown), images, and syntax-highlighted code.
+- **Native Markdown preview**: tables, interactive task lists, `> [!NOTE]` alerts, footnotes, `:emoji:` shortcodes, math (`$…$`, `$$…$$`), sanitized HTML (including `<details>` wrapping Markdown), images, video, and syntax-highlighted code. No browser engine or JavaScript runtime.
 - **Mermaid diagrams**: ```` ```mermaid ```` blocks render as diagrams and switch theme with light/dark mode.
-- **Edit in the rendered view**: click anywhere to edit; the Markdown syntax appears only where the cursor is. Edits change exactly the characters you type: line endings, encoding and formatting elsewhere are preserved byte for byte.
-- **View Source**: toggle (⌘U) to the plain Markdown, sharing the same undo history.
-- **Links**: ⌘-click to follow. Links to other files open in the app, `#heading` links scroll, web links open in your browser.
+- **In-place editing**: one editing pane renders inactive blocks; click a rendered block to reveal and edit its source. Inline emphasis, code and link markers appear when the selection touches them. Edits change exactly the characters you type: line endings, encoding and formatting elsewhere are preserved byte for byte.
+- **View Source**: toggle (⌘U) to reveal all Markdown syntax in the same editor, sharing selection and undo history.
+- **Links**: ⌘-click source or rendered links to follow; add ⇧ to open in a new tab. Links to other files open in the app, `#heading` links scroll, web links open in your browser.
 - **Other files**: text and code open as editable source with syntax highlighting; images, videos and everything else use native viewers (Quick Look for the rest).
 - **Find & replace**: a find bar for the current file, and Find in Files across the current file, all open files, or the whole folder. Options for match case, regex, and wrap around; Replace All with confirmation. Both use JavaScript regex syntax and match the same way, and patterns can span lines (`foo\nbar`); regex replacements can use `$&`, `$1` and `\n`.
 - **Quick filter**: a field above the sidebar's file tree (⇧⌘O) finds files and folders by fuzzy name, so `rdm` matches `README.md`; best matches first, case-insensitive, and a `/` in the query matches the relative path (`docs/rdm`). It searches the folders shown in the tree; tick **Include subfolders** to search the whole folder (hidden files and folders such as `node_modules` are skipped, at most 500 results). Click a result to open it like a tree click (⌘-click for a new tab), ↓/↑ and Return to pick one from the keyboard, Escape to clear the filter and bring back the tree.
@@ -34,13 +34,12 @@ xattr -dr com.apple.quarantine /Applications/MarkdownBrowser.app
 |---|---|
 | macOS 14 Sonoma or later on Apple silicon | Xcode 27 (Swift 6.4) |
 | | [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
-| | Node.js and npm (to bundle the editor) |
 | | Rust, through [rustup](https://rustup.rs) (to build the native core) |
 
 ## Building
 
 ```sh
-brew install xcodegen node rustup
+brew install xcodegen rustup
 rustup-init -y
 xcodegen generate
 open MarkdownBrowser.xcodeproj
@@ -53,7 +52,7 @@ xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDa
 open build/Build/Products/Debug/MarkdownBrowser.app
 ```
 
-The first build runs `npm ci` and bundles the web editor (`web/`), and builds the Rust core (`native/`) with Cargo. Later builds skip those steps when their sources haven't changed.
+The first build resolves SwiftMath through Swift Package Manager and builds the Rust core (`native/`) with Cargo. Later builds reuse unchanged dependencies and native build outputs. Node.js and npm are not required.
 
 Debug builds are signed ad hoc. Set your development team in `project.yml` before distributing.
 
@@ -94,24 +93,24 @@ The link points into the app, so reinstall it if you move the app.
 ## Settings
 
 - **General**: autosave when focus is lost (on by default). When off, you're asked before unsaved changes are discarded. Install the `mdb` command.
-- **Wrap long lines** (on by default, also in the Edit menu): wrap lines wider than the window instead of scrolling sideways, in rendered Markdown, Markdown source and other text files.
+- **Wrap long lines** (on by default, also in the Edit menu): wrap source lines wider than the editor instead of scrolling sideways. Preview prose always wraps; code blocks and tables scroll horizontally.
 - **Appearance**: Automatic (follows macOS), Light, or Dark. Page margins around rendered Markdown (none by default, or narrow, normal, wide), and an optional GitHub-style 980-point text width.
 
 ## Known limitations
 
-- Tables, diagrams and HTML inside blockquotes are shown as source.
-- A footnote definition ends at the first blank line, so multi-paragraph footnotes aren't supported.
-- If the editor's web process crashes, the last second of typing may be lost, along with undo history.
-- After changing the sidebar's folder, images in the open file written with a leading `/` (relative to the folder) resolve against the new folder only once the file is reopened.
+- Clicking a rendered block starts editing at its source beginning, rather than mapping the click to an exact rendered character. Rendered appearance uses native styles, not GitHub's CSS.
+- SwiftMath and the Rust Mermaid renderer do not support every KaTeX command or Mermaid diagram. Rendering errors show the source and an error (math retains its source and logs the error).
+- Raw HTML supports native text, lists, tables, links, images, video and disclosure groups; CSS, scripts and arbitrary browser layout are not supported. SVG images do not load external or embedded image references.
+- Images are limited to 16 MB and 40 million decoded pixels; diagrams to 100 KB of source. Preview and source highlighting are disabled above 5 MB.
+- Parsing is debounced and runs off the main thread after edits, but is not incremental. End-to-end 10k-line display latency and VoiceOver/real-IME parity still require manual validation.
 
 ## Project layout
 
 ```
 MarkdownBrowser/        Swift app (SwiftUI + AppKit)
 MarkdownBrowserTests/   Swift Testing unit tests
-web/                    Editor bundle (TypeScript, CodeMirror 6)
 native/                 Native core (Rust, exposed to Swift through UniFFI)
-goldens/                Results recorded from the JavaScript code that the native code must reproduce
+goldens/                Static search conformance corpus recorded from the former JavaScript editor
 cli/mdb                 Command-line launcher
 Samples/                Fixture folder for manual testing
 project.yml             XcodeGen project definition

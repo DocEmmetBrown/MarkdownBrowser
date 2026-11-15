@@ -35,7 +35,6 @@ final class Workspace {
     let find = FindBarModel()
 
     var root: FileNode? { tree?.root }
-    var usesNativeEditor: Bool { editor is NativeEditorHost }
 
     private(set) var selection: URL?
     private(set) var selectionKind: FileKind = .other
@@ -45,11 +44,11 @@ final class Workspace {
     var expanded: Set<URL> = []
     var sidebarMode: SidebarMode = .files
     var isSidebarVisible: Bool
-    /// A resource the web view was denied access to; drives the "Grant Access…" banner.
+    /// A preview resource denied access; drives the "Grant Access…" banner.
     var deniedResource: URL?
     var openError: String?
 
-    @ObservationIgnored let editor: any WorkspaceEditor
+    @ObservationIgnored let editor: NativeEditorHost
     @ObservationIgnored weak var delegate: WorkspaceDelegate?
     /// Sidebar scroll position, carried over to tabs opened from the sidebar.
     @ObservationIgnored var sidebarScrollOffset: CGFloat = 0
@@ -62,7 +61,7 @@ final class Workspace {
 
     init(url: URL) {
         let url = url.normalizedFileURL
-        editor = AppSettings.nativeEditor ? NativeEditorHost() : EditorHost()
+        editor = NativeEditorHost()
         rootURL = url
         scopes.append(SecurityScope(url: url))
         isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
@@ -93,11 +92,9 @@ final class Workspace {
     }
 
     private func configureEditor() {
-        if let webEditor = editor as? EditorHost {
-            webEditor.schemeHandler.isAllowed = { [weak self] url in self?.canAccess(url) ?? false }
-            webEditor.schemeHandler.onDenied = { [weak self] url in
-                Task { @MainActor [weak self] in self?.deniedResource = url }
-            }
+        editor.preview.isAllowed = { [weak self] url in self?.canAccess(url) ?? false }
+        editor.preview.onDenied = { [weak self] url in
+            self?.deniedResource = url
         }
         editor.onDirtyChange = { [weak self] docId, dirty in
             guard let document = self?.document, document.id == docId else { return }
@@ -368,7 +365,7 @@ final class Workspace {
     // MARK: Editing
 
     func toggleSourceMode() {
-        guard let document, document.kind == .markdown, !usesNativeEditor else { return }
+        guard let document, document.kind == .markdown else { return }
         document.sourceMode.toggle()
         editor.setSourceMode(document.sourceMode)
     }
@@ -438,6 +435,8 @@ final class Workspace {
         let previous = rootURL
         tree?.release()
         rootURL = folder
+        editor.preview.rootURL = folder
+        editor.refreshMedia()
         tree = FileTree.acquire(folder)
         search.setRoot(folder)
         filter.setRoot(folder)

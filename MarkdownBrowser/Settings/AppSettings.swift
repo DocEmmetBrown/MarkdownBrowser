@@ -66,7 +66,6 @@ enum AppSettings {
     static let wrapLongLinesKey = "wrapLongLines"
     static let pageMarginsKey = "pageMargins"
     static let limitPageWidthKey = "limitPageWidth"
-    static let nativeEditorKey = "nativeEditor"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -75,7 +74,6 @@ enum AppSettings {
             wrapLongLinesKey: true,
             pageMarginsKey: PageMargins.none.rawValue,
             limitPageWidthKey: false,
-            nativeEditorKey: false,
         ])
     }
 
@@ -88,10 +86,6 @@ enum AppSettings {
 
     static var wrapLongLines: Bool {
         UserDefaults.standard.bool(forKey: wrapLongLinesKey)
-    }
-
-    static var nativeEditor: Bool {
-        UserDefaults.standard.bool(forKey: nativeEditorKey)
     }
 
     static var autosaveOnFocusLoss: Bool {

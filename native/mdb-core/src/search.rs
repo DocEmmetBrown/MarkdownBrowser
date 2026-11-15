@@ -1,4 +1,4 @@
-//! Find and replace with the semantics of the editor's find bar (`web/src/search/engine.ts`): CodeMirror's search
+//! Find and replace with the semantics of the former JavaScript find bar: CodeMirror's search
 //! cursors over JavaScript regular expressions. Positions are UTF-16 offsets in the document as CodeMirror sees it,
 //! with the file's line separator counting as one `\n`. `goldens/search.json` records the JavaScript results.
 

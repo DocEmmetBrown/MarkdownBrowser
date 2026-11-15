@@ -27,9 +27,10 @@ else
   exit 1
 fi
 
-HASH="$( (find Cargo.toml Cargo.lock mdb-core -type f -not -path '*/target/*' -print0 | sort -z | xargs -0 shasum
+HASH="$( (find Cargo.toml Cargo.lock build.sh mdb-core -type f -not -path '*/target/*' -print0 | sort -z | xargs -0 shasum
   echo "$ARCHS $PROFILE $LIB_DIR") | shasum | cut -d' ' -f1)"
-if [[ -f "$STAMP" && "$(cat "$STAMP")" == "$HASH" && -f "$LIB_DIR/libmdb_core.a" && -f "$GENERATED/MdbCore.swift" ]]; then
+if [[ -f "$STAMP" && "$(cat "$STAMP")" == "$HASH" && -f "$LIB_DIR/libmdb_core.a" \
+  && -f "$GENERATED/MdbCore.swift" && -f "$GENERATED/MdbCoreFFI.h" && -f "$GENERATED/module.modulemap" ]]; then
   echo "Native core up to date"
   exit 0
 fi

@@ -8,14 +8,6 @@ struct DocumentArea: View {
             if let document = workspace.document {
                 DocumentBanners(document: document)
             }
-            if workspace.usesNativeEditor, workspace.selectionKind == .markdown {
-                Text("Native editor test mode: plain Markdown source; rich preview hasn't been migrated yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-            }
             if let denied = workspace.deniedResource {
                 Banner(
                     systemImage: "lock",
@@ -48,13 +40,7 @@ struct DocumentArea: View {
         if let url = workspace.selection {
             switch workspace.selectionKind {
             case .markdown, .text:
-                if let editor = workspace.editor as? EditorHost {
-                    EditorWebView(host: editor)
-                } else if let editor = workspace.editor as? NativeEditorHost {
-                    NativeEditorView(host: editor)
-                } else {
-                    ContentUnavailableView("Editor Unavailable", systemImage: "exclamationmark.triangle")
-                }
+                NativeEditorView(host: workspace.editor)
             case .image:
                 ImageViewer(url: url)
             case .video:

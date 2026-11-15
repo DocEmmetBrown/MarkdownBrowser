@@ -1,156 +1,96 @@
 # Contributing
 
-Thanks for helping out. This guide covers setting up the project, how it fits together, and what to check before submitting a change. By contributing, you agree that your contributions are licensed under the project's [MIT License](../LICENSE).
+By contributing, you agree to license your contributions under the [MIT License](../LICENSE).
 
 ## Setup
 
+Install Xcode 27 (Swift 6.4), XcodeGen, and Rust through rustup. The app targets macOS 14 or later on Apple silicon only.
+
 ```sh
-brew install xcodegen node
-xcodegen generate          # re-run whenever you add, remove or rename files
+brew install xcodegen rustup
+rustup-init -y
+xcodegen generate
 open MarkdownBrowser.xcodeproj
 ```
 
-The Xcode project is generated from `project.yml` and is not checked in; edit `project.yml`, never the `.xcodeproj`.
+The Xcode project is generated and ignored. Edit `project.yml`, not the project. Regenerate after adding, removing or renaming files. Xcode resolves the pinned SwiftMath package automatically; there is no Node/npm toolchain.
 
-To work on the editor alone:
+## Architecture
 
-```sh
-cd web
-npm ci
-npm run dev                # Vite dev server; the bridge logs to the console instead of Swift
-```
+- **Windows**: AppKit window controllers host SwiftUI, providing native tabs, close prompts and focus events.
+- **Workspace**: owns navigation, the selected document, search/find state and security-scoped access. Its `NativeEditorHost` is the only editor implementation.
+- **Sidebar**: an `NSOutlineView` over a shared, lazy `FileTree`. Keep large folders lazy; do not replace this with a fully materialized SwiftUI list. The filter uses a debounced, cancellable stream and retains only its best matches.
+- **OpenDocument**: owns encoding, BOM, line separator, disk fingerprint, recovery text and saving. It requests a revision-tagged snapshot from `DocumentEditor` and acknowledges exactly the version written.
+- **NativeEditorHost**: one editable `NSTextView` with TextKit 1, native undo and IME. It coordinates source styling, Rust-backed find/replace and in-place rendering. Command-click follows links; plain clicks reveal editable source.
+- **NativeLivePreview**: TextKit 1's public glyph delegate conceals inactive source ranges without replacing characters or inserting attachments. Native SwiftUI block views occupy reserved layout rectangles; only nearby views are instantiated. Selection reveals the active block, and inline delimiters reveal when the selection touches their construct. Command-U removes concealment and embedded views without replacing the editor.
+- **NativeMarkdown**: Comrak source ranges, resolved links, headings and styling. After edits, parsing is debounced on a background task; obsolete results are discarded by revision. Only changed style ranges are applied. This is not an incremental parser.
+- **NativePreview**: the native SwiftUI rendering tree embedded in the editor, not a second pane. Tables, task lists, disclosure groups and media use native controls. Task toggles edit only the original checkbox symbol through the editor's undo path. SwiftMath draws math; Rust renders Mermaid to SVG and rasterizes SVG with resvg. Failed diagrams retain source and show an error; failed math retains source and logs the error.
+- **Native core**: `native/mdb-core` provides parsing, sanitizing, syntax highlighting, diagrams and ECMAScript-compatible search through UniFFI. `native/build.sh` builds for `aarch64-apple-darwin` and generates ignored Swift bindings. Unchanged builds are hash-stamped.
+- **Search**: the find bar and Find in Files share `SearchEngine` and Rust `regress`. `goldens/search.json` is the static reference recorded from the former JavaScript implementation; replaying it requires no JavaScript.
 
-## How it fits together
+Rendered inline labels use read-only `NSTextView` instances for character-level link hit testing, including Command/Shift modifiers. Their attributed text and math attachments are display-only; they never enter the editable document's text storage.
 
-```mermaid
-flowchart LR
-    subgraph Swift app
-        W[WorkspaceWindowController] --> WS[Workspace]
-        WS --> D[OpenDocument]
-        WS --> S[SearchModel]
-        WS --> H[EditorHost]
-        H --> SH[LocalResourceSchemeHandler]
-    end
-    subgraph WKWebView
-        E[CodeMirror editor<br/>web/src]
-    end
-    H <-- "window.mdb.* / postMessage" --> E
-    SH -- "mdb-app:// bundle<br/>mdb-file:// local files" --> E
-```
-
-- **Windows** are AppKit `NSWindowController`s hosting SwiftUI (`WindowManager`, `WorkspaceWindowController`). This gives us native tabs, close prompts and focus events. The SwiftUI `App` only declares the Settings scene and menu commands.
-- **`Workspace`** is one window's session: root folder or file, the file tree, navigation history, the open document, find state and security-scoped access.
-- **The sidebar** is an `NSOutlineView` (`FileOutlineView`) over a `FileTree` shared by every tab on the same folder. Folders are listed only when expanded, and rows are created only when visible, so folders with tens of thousands of files stay fast; keep it that way (no SwiftUI `List` over the whole tree). `Workspace.rootURL` and `tree` change when a folder is double-clicked or the user goes up (`setRoot`, `goUp`): the old tree is released, the new one acquired, the search root follows, and the outline is rebuilt (`.id` on the root URL). Going above the folders the sandbox has granted goes through `requestAccessTo`, like opening a file outside them.
-- **The sidebar filter** (`SidebarFilterModel`, `FileFilter`, `FuzzyMatcher`, `FilterBar`, `FilterResultsView`) replaces the tree with a flat `NSTableView` of matches while the field is non-empty; clearing it brings back the untouched outline and its expansion state. `FuzzyMatcher` is a pure scorer (subsequence, case-insensitive, bonuses for consecutive characters and word starts). `FileFilter` runs off the main actor as a cancellable `AsyncStream` of growing snapshots, skipping hidden files and `FileKind.ignoredNames`, and keeps only the best `maxResults`. A non-recursive search lists just the folders the tree has expanded (`Workspace.visibleDirectories()`), never the whole tree. The model debounces and cancels on every keystroke.
-- **`OpenDocument`** owns a file's encoding, line separator, on-disk hash and saving. The live text lives in the editor; Swift asks for a snapshot when saving. The editor also sends unsaved text about a second after typing stops, so `EditorHost` can restore it if the web process crashes.
-- **`EditorHost`** wraps the `WKWebView` and the JS bridge. Swift calls `window.mdb.*` through `callAsyncJavaScript` with arguments, never by building script strings. JS posts typed messages (`ready`, `dirty`, `text`, `openLink`, `findStatus`, `error`) back.
-- **`LocalResourceSchemeHandler`** serves the bundled editor (`mdb-app://bundle/`) and workspace files (`mdb-file://local/<path>`). Every local request is checked against the workspace's granted folders.
-- **The editor** (`web/src`) is CodeMirror 6 with a live-preview layer:
-  - `livePreview/inline.ts` hides Markdown syntax and styles text.
-  - `livePreview/blocks.ts` replaces tables, HTML, math and Mermaid blocks with rendered widgets when the cursor isn't inside them.
-  - `render/` holds the GitHub-compatible HTML pipeline, Mermaid and KaTeX.
-  - `search/engine.ts` is the find bar's find-and-replace logic. Find in Files uses `SearchEngine`, which runs a Rust port of it (`native/mdb-core/src/search.rs`, JavaScript regex through `regress`); both are checked against `goldens/search.json` so they match the same way.
-- **The native core** (`native/`) is a Rust workspace exposed to Swift through UniFFI. `native/build.sh`, a pre-build phase of the `MdbCore` target, builds it for the active architectures into the products folder and generates the Swift bindings into `native/generated/` (not committed). `MdbCore` compiles those bindings without main-actor isolation; the app links `libmdb_core.a`.
+The native build phase declares the generated Swift/C/modulemap and Rust archive as outputs. Keep these declarations: Xcode must regenerate bindings before Swift dependency scanning/compilation, or an API change can link stale Swift bindings to a new archive and crash on UniFFI's checksum check.
 
 ## Rules worth knowing
 
-**Never re-serialize Markdown.** The document is always the raw source. Rendering is done with decorations, and every edit is a plain text change, so saving writes back the original bytes plus the user's edits. Don't introduce anything that parses Markdown into a model and prints it back.
+**Never re-serialize Markdown.** The document is raw source. Parsing and rendering consume copies; they must never print an AST back into the editor or into a saved file.
 
-**Preserve the file's bytes.** `TextCodec` keeps the encoding and BOM. The editor is created with the file's line separator (`EditorState.lineSeparator`). Always get text with `state.sliceDoc()` (which uses that separator), not `doc.toString()`. When positions must match document offsets, use `doc.toString()`.
+**Preserve bytes.** `TextCodec` retains encoding and BOM. Typed, pasted, dropped and committed IME text use the document's line separator. Untouched text, including mixed line endings, stays unchanged.
 
-**Treat document content as untrusted.**
-- HTML goes through `rehype-sanitize` with GitHub's schema.
-- The page has a strict CSP (`web/index.html`).
-- Mermaid runs with `securityLevel: "strict"`.
-- Web navigation is blocked (`EditorHost` navigation delegate).
-- Only `http`, `https` and `mailto` links leave the app.
-- Paths are checked with `PathPolicy`, which resolves `..` and symlinks.
+**Keep undo and composition intact.** Programmatic edits must use the editor's `shouldChangeText`/text storage/`didChangeText` path. Styling changes attributes, not characters, and is deferred during marked-text composition.
 
-**Swift concurrency.** The app target uses Swift 6 with `MainActor` as the default isolation. Pure value types and helpers that run off the main thread must be marked `nonisolated` (see `TextCodec`, `FileKind`, `PathPolicy`, `FolderSearch`).
+**Treat content as untrusted.** Rust HTML is sanitized with ammonia before Swift sees it. The preview is not a browser: scripts, event handlers and CSS do not run. Local resources must pass `PathPolicy`, resolving traversal and symlinks, before loading. SVG image resolvers cannot load external resources. AVFoundation external references are forbidden. Only HTTP, HTTPS and mail links leave the app.
 
-**Comments** explain what the code can't say on its own, in one short line. Don't restate the code.
+**Bound rendering.** Preview/highlighting stops above 5 MB; images are bounded by encoded size and decoded pixel count; diagram and SVG inputs and raster dimensions are bounded. Surface failures visibly or through the preview logger, not silent success-shaped results.
 
-**Dependencies**: prefer what's already there. New npm packages end up in the app bundle, so justify their size.
+**Swift concurrency.** The app defaults to main-actor isolation. Pure values used in background tasks must be `nonisolated` and `Sendable`. Do not parse, highlight code or render diagrams on each keystroke on the main actor.
+
+**Dependencies.** Reuse the existing libraries. Review the Cargo lockfile and exact SwiftPM version when updating dependencies. Do not add a browser or Node-based build step.
 
 ## Common changes
 
-- **New setting**: add a key and default in `Settings/AppSettings.swift`, a control in `Settings/SettingsView.swift` (`@AppStorage`), and read it where needed.
-- **New bridge call**:
-  1. Add the JS function to the object returned by `createEditor` in `web/src/editor.ts`.
-  2. Add a Swift wrapper in `EditorHost`.
-  3. For a JS → Swift message, add it to `OutMessage` in `web/src/bridge.ts` and handle it in `EditorHost.receive`.
-- **New rendered Markdown construct**:
-  - Inline constructs belong in `livePreview/inline.ts`.
-  - Multi-line blocks belong in `livePreview/blocks.ts` (block widgets must come from a `StateField`).
-  - Keep the source revealed when the selection touches it.
-- **New file type**: classify it in `Workspace/FileKind.swift`, then pick a viewer in `Views/DocumentArea.swift`.
-- **App icon**: edit and run `swift scripts/make-icon.swift`, which redraws every size in `Assets.xcassets/AppIcon.appiconset`; commit the PNGs.
+- **Setting**: add a key/default in `AppSettings`, expose it in `SettingsView`, and apply it to existing editors.
+- **Rendered Markdown**: extend the Rust parser/sanitizer and native preview together; preserve source ranges and add focused native tests.
+- **File type**: classify it in `FileKind` and choose its viewer in `DocumentArea`.
+- **App icon**: run `swift scripts/make-icon.swift` and commit the generated icon PNGs.
 
-## Testing
+## Validation
 
-Run everything before submitting. While the repository is private, CI runs the Swift tests only on demand (**Actions › app › Run workflow**), so the local run is the check that counts:
-
-In VS Code, run **Build and Run MarkdownBrowser** from the Agents Run button or
-**Tasks: Run Task**. It installs the web dependencies, type-checks, tests and builds
-the editor, generates the Xcode project, compiles and runs the Swift tests, and
-launches the app only if every step succeeds.
+The VS Code **Build and Run MarkdownBrowser** task tests Rust, generates the project, runs Swift tests and launches only on success. Swift CI remains manual while the repository is private; the Linux Rust job runs on pushes/PRs.
 
 ```sh
-# Swift unit tests (Swift Testing)
+cargo fmt --manifest-path native/Cargo.toml --check
+cargo clippy --locked --manifest-path native/Cargo.toml --all-targets --features mdb-core/bindgen -- -D warnings
+cargo test --locked --release --manifest-path native/Cargo.toml
+xcodegen generate
 xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build test
-
-# Editor: type check and unit tests (Vitest + jsdom)
-cd web && npx tsc --noEmit && npx vitest run
-
-# Native core: unit tests and the goldens replay (release mode keeps the replay fast)
-cd native && cargo test --release && cargo clippy --all-targets --features mdb-core/bindgen
 ```
 
-What the suites cover:
+Swift tests cover byte preservation, source styling, links/anchors, preview controls and layout, path permissions, search, saves/conflicts, sidebar navigation and tabs. Rust tests cover parser source ranges, sanitized HTML, code highlights, diagrams, regex semantics and the recorded search corpus.
 
-- **Swift**:
-  - encoding and line-ending round trips
-  - path containment
-  - file classification
-  - scheme URLs and byte ranges
-  - search and replace
-  - saving, conflict detection and autosave
-- **Native core** (`native/mdb-core`): find and replace, including a replay of `goldens/search.json`.
-- **Editor**:
-  - byte-exact round trips
-  - live-preview rendering
-  - footnotes, emoji shortcodes and HTML blocks split by blank lines
-  - task toggles
-  - anchors
-  - HTML sanitizing
-  - find and replace, including parity between the find bar and the Find in Files engine
-  - search goldens: `test/searchGoldens.test.ts` records the engine's results over a fixed corpus in `goldens/search.json`, the reference for the native engine (see `docs/native-migration-plan.md`). If a dependency update changes them, review the diff and run `npm run goldens` to accept it.
+Open `Samples/` for the manual checks:
 
-Some things can only be checked by hand. Open `Samples/` in the app and confirm:
+1. Inspect tables, images, alerts, emoji, footnotes, details, math and diagrams in light/dark mode.
+2. Click rendered blocks to edit, toggle a task, undo and save; compare bytes with a copy. Reveal all source with Command-U; resize and scroll through the same editor.
+3. Command-click `docs/guide.md#installation` from source and rendered text; test Shift for a new tab and history navigation.
+4. Change the file externally, both with and without local edits; check reload/conflict handling.
+5. Test real IME composition, drag/drop, VoiceOver and keyboard-only navigation.
+6. Measure 10k-line typing with a visible window, layout and preview updates. The automated insertion timing excludes display/layout and is not an end-to-end performance claim.
+7. Test find/replace and Find in Files in each scope, with wrap on/off.
+8. Test resource permission requests and root-relative images after changing the sidebar folder.
+9. Run `cli/mdb` with the current directory and explicit paths.
 
-1. The README renders like it does on GitHub, in light and dark mode, including the table, alerts, math, image and Mermaid diagram.
-2. Clicking text reveals its Markdown; clicking away renders it again.
-3. Editing and saving changes only what you typed (`git diff` or `cmp` against a copy).
-4. ⌘-clicking `docs/guide.md#installation` opens the guide at that heading, and ⌘[ goes back.
-5. Editing a file in another app reloads it, or shows the conflict banner if you have unsaved changes.
-6. With unsaved edits, `pkill -f com.apple.WebKit.WebContent` (closes web content in other apps too) restores the editor with the edits still unsaved.
-7. Find bar and Find in Files work in each scope, with wrap on and off.
-8. `cli/mdb` opens the current directory and given paths.
-
-When you fix a bug, add a test that fails without the fix.
+Rendered-block clicks currently reveal the beginning of that block, not the exact rendered character. Math/Mermaid and HTML/CSS fidelity differ from browser renderers; keep the [migration status](native-migration-plan.md) and README honest about limitations.
 
 ## Releasing
 
-Push a version tag; the `release` workflow tests, builds and attaches `MarkdownBrowser-<version>.zip` and its SHA-256 to a GitHub release (tags with a `-suffix` become pre-releases):
+Push a version tag to run tests, build and attach the zip and SHA-256:
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-To build the same zip locally, run `scripts/build-release.sh 0.2.0` (output in `dist/`, `SKIP_TESTS=1` to skip the tests). Builds are signed ad hoc unless `DEVELOPER_ID_APPLICATION` is set; notarization also needs `NOTARY_PROFILE` (from `xcrun notarytool store-credentials`) or `NOTARY_KEY_PATH`, `NOTARY_KEY_ID` and `NOTARY_ISSUER`. The workflow doesn't set these yet.
+Locally run `scripts/build-release.sh 0.2.0` (`SKIP_TESTS=1` skips tests). Builds are ad-hoc signed unless `DEVELOPER_ID_APPLICATION` is set. Notarization also needs `NOTARY_PROFILE` or the three `NOTARY_KEY_*`/issuer settings documented in that script.
 
-## Submitting changes
-
-- Keep changes focused; separate refactors from behavior changes.
-- Describe what changed and how you tested it, including the manual checks above that apply.
-- Update `README.md` when you change features, shortcuts, requirements or limitations.
+Keep changes focused, add regression tests for changed behavior, and document which manual checks actually ran.

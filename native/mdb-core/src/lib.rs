@@ -2,4 +2,6 @@
 
 uniffi::setup_scaffolding!();
 
+pub mod markdown;
+pub mod render;
 pub mod search;

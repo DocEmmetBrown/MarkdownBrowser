@@ -174,28 +174,6 @@ import Testing
     }
 }
 
-@Suite struct SchemeHandlerTests {
-    @Test func mapsFileURLsBothWays() {
-        let file = URL(filePath: "/Users/me/My Docs/read me.md")
-        let scheme = LocalResourceSchemeHandler.schemeURL(for: file)
-        #expect(scheme.absoluteString == "mdb-file://local/Users/me/My%20Docs/read%20me.md")
-        #expect(LocalResourceSchemeHandler.fileURL(for: scheme)?.path == file.path)
-    }
-
-    @Test func rejectsOtherHosts() {
-        #expect(LocalResourceSchemeHandler.fileURL(for: URL(string: "mdb-file://evil/etc/passwd")!) == nil)
-    }
-
-    @Test func parsesByteRanges() {
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=0-99", size: 1000) == 0..<100)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=900-", size: 1000) == 900..<1000)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=-100", size: 1000) == 900..<1000)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=0-5000", size: 1000) == 0..<1000)
-        #expect(LocalResourceSchemeHandler.byteRange("bytes=2000-", size: 1000) == nil)
-        #expect(LocalResourceSchemeHandler.byteRange(nil, size: 1000) == nil)
-    }
-}
-
 @Suite struct FolderSearchTests {
     @Test func findsMatchesWithUTF16Columns() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

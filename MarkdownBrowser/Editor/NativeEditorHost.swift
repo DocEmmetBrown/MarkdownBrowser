@@ -1,19 +1,39 @@
 import AppKit
+import MdbCore
 import SwiftUI
 
-struct NativeEditorView: NSViewRepresentable {
+struct NativeEditorView: View {
     let host: NativeEditorHost
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let notice = host.preview.notice {
+                Text(notice).font(.caption).foregroundStyle(.secondary).padding(8)
+            }
+            NativeSourceView(host: host)
+        }
+    }
+}
+
+private struct NativeSourceView: NSViewRepresentable {
+    let host: NativeEditorHost
+    @Environment(\.colorScheme) private var colorScheme
 
     func makeNSView(context: Context) -> NSScrollView {
         host.scrollView
     }
 
-    func updateNSView(_ nsView: NSScrollView, context: Context) {}
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        host.setDarkAppearance(colorScheme == .dark)
+    }
 }
 
 final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
     let textView: NativeTextView
     let scrollView: NSScrollView
+    let preview = NativePreviewModel()
+    let liveLayout: NativeLiveLayoutManager
+    private(set) lazy var livePreview = NativeLivePreviewController(textView: textView, layout: liveLayout, model: preview)
 
     var onDirtyChange: (Int, Bool) -> Void = { _, _ in }
     var onUnsavedText: (Int, String) -> Void = { _, _ in }
@@ -27,14 +47,43 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
     private var options = SearchOptions(query: "")
     private var replacement = ""
     private var matches: [(search: SearchEngine.Match, range: NSRange)] = []
+    private var matchedRevision = -1
+    private var matchedOptions: SearchOptions?
     private var isLoading = false
     private let engine = SearchEngine()
+    private var markdown: NativeMarkdown?
+    private var parsedSource = ""
+    private var parseTask: Task<Void, Never>?
+    private var styles: [NativeMarkdownStyle] = []
+    private var pendingMarkdownStyle = false
+    private var editedStyleRange: NSRange?
+    private var codeTask: Task<Void, Never>?
+    private var isDark = false
 
     override init() {
-        textView = NativeTextView(usingTextLayoutManager: true)
+        let storage = NSTextStorage()
+        liveLayout = NativeLiveLayoutManager()
+        let container = NSTextContainer(containerSize: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
+        storage.addLayoutManager(liveLayout)
+        liveLayout.addTextContainer(container)
+        textView = NativeTextView(frame: .zero, textContainer: container)
         scrollView = NativeEditorScrollView()
         super.init()
+        livePreview.reveal = { [weak self] range in
+            guard let self else { return }
+            self.textView.setSelectedRange(NSRange(location: range.location, length: 0))
+            self.livePreview.updateSelection()
+            self.textView.scrollRangeToVisible(NSRange(location: range.location, length: 0))
+            self.focus()
+        }
         textView.delegate = self
+        textView.openLink = { [weak self] location, newTab in
+            guard let self, let document = self.document, document.kind == .markdown else { return false }
+            self.ensureMarkdown()
+            guard let href = self.markdown?.link(at: location) else { return false }
+            self.onOpenLink(document.id, href, newTab)
+            return true
+        }
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -53,6 +102,7 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
         textView.textColor = .textColor
         textView.typingAttributes = [.font: font, .foregroundColor: NSColor.textColor]
         scrollView.documentView = textView
+        livePreview.observe(scrollView.contentView)
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         textView.textContainerInset = NSSize(width: CGFloat(AppSettings.pageLayout.margins.points), height: 16)
@@ -63,16 +113,30 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
 
     func load(_ document: OpenDocument, rootURL: URL?, anchor: String?) {
         self.document = document
+        preview.documentURL = document.url
+        preview.notice = nil
+        preview.rootURL = rootURL
+        preview.isVisible = document.kind == .markdown && !document.sourceMode
+        preview.openLink = { [weak self] href, newTab in
+            guard let self, let id = self.document?.id else { return }
+            self.onOpenLink(id, href, newTab)
+        }
+        preview.toggleTask = { [weak self] offset, source in
+            self?.toggleTask(at: offset, source: source)
+        }
         savedText = document.content.text
         textView.lineSeparator = document.content.lineSeparator
         isLoading = true
         textView.string = document.recoveryText ?? savedText
+        resetMarkdown()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.undoManager?.removeAllActions()
         isLoading = false
         snapshots.removeAll()
         revision += 1
         options.query = ""
+        ensureMarkdown()
+        scheduleCodeHighlighting()
         updateMatches()
         if let anchor {
             scrollToAnchor(anchor)
@@ -81,62 +145,19 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
         }
     }
 
-    func setSourceMode(_ on: Bool) {}
+    func setSourceMode(_ on: Bool) {
+        preview.isVisible = document?.kind == .markdown && !on
+        livePreview.updateSelection()
+    }
 
     func scrollToAnchor(_ fragment: String) {
         let decodedTarget = fragment.removingPercentEncoding ?? fragment
         let target = decodedTarget.hasPrefix("user-content-")
             ? String(decodedTarget.dropFirst("user-content-".count))
             : decodedTarget
-        let normalizedTarget = target.lowercased()
+        ensureMarkdown()
         let source = textView.string as NSString
-        var lines: [(text: String, range: NSRange)] = []
-        var location = 0
-        while location < source.length {
-            let range = source.lineRange(for: NSRange(location: location, length: 0))
-            lines.append((source.substring(with: range).trimmingCharacters(in: .newlines), range))
-            location = NSMaxRange(range)
-        }
-
-        var inFence: (character: Character, length: Int)?
-        var usedSlugs = Set<String>()
-        for index in lines.indices {
-            let line = lines[index].text
-            if let activeFence = inFence {
-                if selfFenceEndMatches(activeFence, line: line) { inFence = nil }
-                continue
-            }
-            let fence = fenceMarker(in: line)
-            if let fence {
-                inFence = fence
-                continue
-            }
-
-            let heading: (String, NSRange)?
-            if let parsed = atxHeading(in: line) {
-                heading = (parsed, lines[index].range)
-            } else if index + 1 < lines.count, isSetextUnderline(lines[index + 1].text) {
-                heading = (line.trimmingCharacters(in: .whitespaces), lines[index].range)
-            } else {
-                heading = nil
-            }
-            guard let (text, range) = heading else { continue }
-            let base = githubSlug(headingPlainText(text))
-            var slug = base
-            var duplicate = 0
-            while usedSlugs.contains(slug) {
-                duplicate += 1
-                slug = "\(base)-\(duplicate)"
-            }
-            usedSlugs.insert(slug)
-            if slug == normalizedTarget {
-                textView.setSelectedRange(NSRange(location: range.location, length: 0))
-                textView.scrollRangeToVisible(range)
-                return
-            }
-        }
-
-        guard let range = explicitAnchorRange(in: source, target: target) else { return }
+        guard let range = markdown?.anchor(fragment) ?? explicitAnchorRange(in: source, target: target) else { return }
         textView.setSelectedRange(NSRange(location: range.location, length: 0))
         textView.scrollRangeToVisible(range)
     }
@@ -149,7 +170,25 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
         textView.scrollRangeToVisible(range)
     }
 
-    func refreshMedia() {}
+    func refreshMedia() {
+        preview.mediaRevision += 1
+    }
+
+    func toggleTask(at offset: Int, source: String) {
+        guard textView.string == source, !textView.hasMarkedText() else {
+            NSSound.beep()
+            return
+        }
+        ensureMarkdown()
+        guard markdown?.nodes.contains(where: { $0.kind == .task && Int($0.detail) == offset }) == true,
+              offset >= 0, offset < (source as NSString).length else {
+            NSSound.beep()
+            return
+        }
+        let symbol = (source as NSString).substring(with: NSRange(location: offset, length: 1))
+        edit(range: NSRange(location: offset, length: 1), text: symbol == " " ? "x" : " ")
+        textView.undoManager?.setActionName("Toggle Task")
+    }
 
     func focus() {
         textView.window?.makeFirstResponder(textView)
@@ -175,12 +214,15 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
         guard document?.id == docId else { return }
         isLoading = true
         textView.string = text
+        resetMarkdown()
         textView.lineSeparator = document?.content.lineSeparator ?? textView.lineSeparator
         textView.undoManager?.removeAllActions()
         isLoading = false
         savedText = text
         snapshots.removeAll()
         revision += 1
+        ensureMarkdown()
+        scheduleCodeHighlighting()
         reportChanges()
     }
 
@@ -195,12 +237,40 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         guard !isLoading else { return }
+        livePreview.textChanged()
         revision += 1
         reportChanges()
+        scheduleMarkdown()
+        scheduleCodeHighlighting()
+    }
+
+    func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+        guard !isLoading, document?.kind == .markdown, let replacementString else { return true }
+        let length = (replacementString as NSString).length
+        livePreview.prepareForEdit(range, length: length)
+        let delta = length - range.length
+        var changed = NSRange(location: range.location, length: length)
+        if var previous = editedStyleRange {
+            if NSMaxRange(range) <= previous.location {
+                previous.location += delta
+            } else if range.location < NSMaxRange(previous) {
+                let end = max(NSMaxRange(previous) + delta, NSMaxRange(changed))
+                previous.location = min(previous.location, changed.location)
+                previous.length = max(0, end - previous.location)
+            }
+            changed = NSUnionRange(changed, previous)
+        }
+        editedStyleRange = changed
+        return true
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        guard !isLoading else { return }
         updateMatches()
+        if pendingMarkdownStyle, !textView.hasMarkedText(), let markdown, parsedSource == textView.string {
+            applyMarkdown(markdown, source: parsedSource)
+        }
+        livePreview.updateSelection()
     }
 
     func setFindQuery(docId: Int, _ model: FindBarModel) {
@@ -272,6 +342,165 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
         updateMatches()
     }
 
+    func ensureMarkdown() {
+        guard document?.kind == .markdown else { return }
+        let source = textView.string
+        guard source.utf8.count <= OpenDocument.livePreviewSizeLimit else { return }
+        guard markdown == nil || parsedSource != source else { return }
+        parseTask?.cancel()
+        applyMarkdown(NativeMarkdown(source), source: source)
+    }
+
+    private func scheduleMarkdown() {
+        parseTask?.cancel()
+        guard document?.kind == .markdown else { return }
+        let source = textView.string
+        guard source.utf8.count <= OpenDocument.livePreviewSizeLimit else {
+            resetMarkdown()
+            return
+        }
+        let currentRevision = revision
+        parseTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(80))
+            } catch is CancellationError {
+                return
+            } catch {
+                assertionFailure("Markdown update delay failed: \(error)")
+                return
+            }
+            guard !Task.isCancelled else { return }
+            let parsed = await Task.detached(priority: .userInitiated) { NativeMarkdown(source) }.value
+            guard let self, !Task.isCancelled, self.revision == currentRevision else { return }
+            self.applyMarkdown(parsed, source: source)
+        }
+    }
+
+    private func applyMarkdown(_ parsed: NativeMarkdown, source: String) {
+        markdown = parsed
+        preview.tree = parsed.rendered
+        parsedSource = source
+        pendingMarkdownStyle = textView.hasMarkedText()
+        guard !pendingMarkdownStyle, let storage = textView.textStorage else { return }
+        defer {
+            preview.notice = parsed.rendered.failure
+            livePreview.apply(parsed, source: source)
+        }
+        let newStyles = parsed.nodes.compactMap { node -> NativeMarkdownStyle? in
+            let style = NativeMarkdownStyle(range: node.range, kind: node.kind, level: node.level)
+            return style.attributes.isEmpty || NSMaxRange(style.range) > storage.length ? nil : style
+        }
+        let fullRange = NSRange(location: 0, length: storage.length)
+        let oldStyles = styles
+        styles = newStyles
+        let oldKeys = Set(oldStyles.map(\.key))
+        let newKeys = Set(newStyles.map(\.key))
+        var ranges = (oldStyles.filter { !newKeys.contains($0.key) } + newStyles.filter { !oldKeys.contains($0.key) })
+            .map { NSIntersectionRange($0.range, fullRange) }
+        if let edited = editedStyleRange {
+            let start = max(0, edited.location - 1)
+            let end = min(storage.length, NSMaxRange(edited) + 1)
+            if end > start { ranges.append(NSRange(location: start, length: end - start)) }
+        }
+        editedStyleRange = nil
+        ranges = ranges.filter { $0.length > 0 }.sorted { $0.location < $1.location }
+        var changed: [NSRange] = []
+        for range in ranges {
+            if let last = changed.last, NSMaxRange(last) >= range.location {
+                changed[changed.count - 1] = NSUnionRange(last, range)
+            } else {
+                changed.append(range)
+            }
+        }
+        guard !changed.isEmpty else { return }
+        isLoading = true
+        storage.beginEditing()
+        for range in changed {
+            storage.setAttributes([
+                .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
+                .foregroundColor: NSColor.textColor,
+            ], range: range)
+        }
+        for style in newStyles {
+            var low = 0
+            var high = changed.count
+            while low < high {
+                let middle = (low + high) / 2
+                if NSMaxRange(changed[middle]) <= style.range.location {
+                    low = middle + 1
+                } else {
+                    high = middle
+                }
+            }
+            var index = low
+            while index < changed.count, changed[index].location < NSMaxRange(style.range) {
+                style.apply(to: storage, range: NSIntersectionRange(changed[index], style.range))
+                index += 1
+            }
+        }
+        storage.endEditing()
+        isLoading = false
+    }
+
+    private func resetMarkdown() {
+        livePreview.reset()
+        parseTask?.cancel()
+        codeTask?.cancel()
+        markdown = nil
+        preview.tree = nil
+        parsedSource = ""
+        styles = []
+        pendingMarkdownStyle = false
+        editedStyleRange = nil
+        textView.textStorage?.setAttributes([
+            .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
+            .foregroundColor: NSColor.textColor,
+        ], range: NSRange(location: 0, length: (textView.string as NSString).length))
+    }
+
+    func setDarkAppearance(_ dark: Bool) {
+        guard dark != isDark else { return }
+        isDark = dark
+        livePreview.appearanceChanged(dark)
+        scheduleCodeHighlighting()
+    }
+
+    private func scheduleCodeHighlighting() {
+        codeTask?.cancel()
+        guard document?.kind == .text, let document else { return }
+        let source = textView.string
+        guard source.utf8.count <= OpenDocument.livePreviewSizeLimit else { return }
+        let language = document.url.pathExtension.isEmpty ? document.name : document.url.pathExtension
+        let dark = isDark
+        let currentRevision = revision
+        codeTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(80))
+                let spans = try await Task.detached {
+                    try highlightSource(text: source, language: language, dark: dark)
+                }.value
+                guard let self, !Task.isCancelled, self.revision == currentRevision,
+                      !self.textView.hasMarkedText(), let storage = self.textView.textStorage else { return }
+                self.isLoading = true
+                storage.beginEditing()
+                for span in spans {
+                    storage.addAttribute(.foregroundColor, value: NSColor(
+                        red: CGFloat(span.red) / 255, green: CGFloat(span.green) / 255,
+                        blue: CGFloat(span.blue) / 255, alpha: 1),
+                        range: NSRange(location: Int(span.start), length: Int(span.length)))
+                }
+                storage.endEditing()
+                self.isLoading = false
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self, !Task.isCancelled, self.revision == currentRevision else { return }
+                self.preview.notice = "Syntax highlighting failed: \(error.localizedDescription)"
+                self.preview.logger.error("Syntax highlighting failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     private func edit(range: NSRange, text: String) {
         guard textView.shouldChangeText(in: range, replacementString: text) else { return }
         textView.textStorage?.replaceCharacters(in: range, with: text)
@@ -281,10 +510,14 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
     private func updateMatches(wrapped: Bool = false, atEnd: Bool = false) {
         guard let id = document?.id else { return }
         let isValid = engine.validate(options) == nil
-        matches = isValid
-            ? mappedMatches(engine.matches(
-                in: textView.string, lineSeparator: textView.lineSeparator, options: options, limit: 10_000))
-            : []
+        if matchedRevision != revision || matchedOptions != options {
+            matches = isValid && !options.query.isEmpty
+                ? mappedMatches(engine.matches(
+                    in: textView.string, lineSeparator: textView.lineSeparator, options: options, limit: Int(UInt32.max)))
+                : []
+            matchedRevision = revision
+            matchedOptions = options
+        }
         let current = matches.firstIndex { $0.range == textView.selectedRange() }
         onFindStatus(
             id,
@@ -362,6 +595,7 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
     }
 
     private func applySettings() {
+        preview.pageLayout = AppSettings.pageLayout
         textView.textContainerInset = NSSize(width: CGFloat(AppSettings.pageLayout.margins.points), height: 16)
         scrollView.hasHorizontalScroller = !AppSettings.wrapLongLines
         textView.isHorizontallyResizable = !AppSettings.wrapLongLines
@@ -370,73 +604,6 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
             width: AppSettings.wrapLongLines ? scrollView.contentSize.width : .greatestFiniteMagnitude,
             height: .greatestFiniteMagnitude)
         scrollView.tile()
-    }
-
-    private func atxHeading(in line: String) -> String? {
-        let indent = line.prefix(while: { $0 == " " }).count
-        guard indent <= 3 else { return nil }
-        let content = String(line.dropFirst(indent))
-        let hashes = content.prefix(while: { $0 == "#" }).count
-        guard (1...6).contains(hashes) else { return nil }
-        let remainder = String(content.dropFirst(hashes))
-        guard remainder.isEmpty || remainder.first == " " || remainder.first == "\t" else { return nil }
-        let heading = remainder.trimmingCharacters(in: .whitespaces)
-        return heading.replacingOccurrences(
-            of: "[ \\t]+#+[ \\t]*$",
-            with: "",
-            options: .regularExpression)
-    }
-
-    private func isSetextUnderline(_ line: String) -> Bool {
-        let content = line.trimmingCharacters(in: .whitespaces)
-        guard let marker = content.first, marker == "=" || marker == "-" else { return false }
-        return content.allSatisfy { $0 == marker }
-    }
-
-    private func fenceMarker(in line: String) -> (character: Character, length: Int)? {
-        let indent = line.prefix(while: { $0 == " " }).count
-        guard indent <= 3 else { return nil }
-        let content = line.dropFirst(indent)
-        guard let marker = content.first, marker == "`" || marker == "~" else { return nil }
-        let count = content.prefix(while: { $0 == marker }).count
-        return count >= 3 ? (marker, count) : nil
-    }
-
-    private func selfFenceEndMatches(_ fence: (character: Character, length: Int), line: String) -> Bool {
-        let indent = line.prefix(while: { $0 == " " }).count
-        guard indent <= 3 else { return false }
-        let content = line.dropFirst(indent)
-        let count = content.prefix(while: { $0 == fence.character }).count
-        guard count >= fence.length else { return false }
-        return content.dropFirst(count).allSatisfy { $0 == " " || $0 == "\t" }
-    }
-
-    private func headingPlainText(_ source: String) -> String {
-        var text = source
-        for (pattern, replacement) in [
-            ("!?\\[([^\\]]*)\\]\\([^)]*\\)", "$1"),
-            ("!?\\[([^\\]]*)\\]\\[[^\\]]*\\]", "$1"),
-            ("<[^>]+>", ""),
-            ("[*_~`]", ""),
-        ] {
-            text = text.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
-        }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func githubSlug(_ text: String) -> String {
-        let scalars = text.lowercased().unicodeScalars.filter { scalar in
-            switch scalar.properties.generalCategory {
-            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
-                .nonspacingMark, .spacingMark, .enclosingMark, .decimalNumber, .letterNumber, .otherNumber,
-                .connectorPunctuation:
-                true
-            default:
-                scalar == "-" || scalar == " "
-            }
-        }
-        return String(String.UnicodeScalarView(scalars))
-            .replacingOccurrences(of: " ", with: "-")
     }
 
     private func explicitAnchorRange(in source: NSString, target: String) -> NSRange? {
@@ -458,6 +625,22 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
 
 final class NativeTextView: NSTextView {
     var lineSeparator = "\n"
+    var openLink: (Int, Bool) -> Bool = { _, _ in false }
+    var updateLiveViews: () -> Void = {}
+
+    override func layout() {
+        super.layout()
+        updateLiveViews()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            let point = convert(event.locationInWindow, from: nil)
+            let location = characterIndexForInsertion(at: point)
+            if openLink(location, event.modifierFlags.contains(.shift)) { return }
+        }
+        super.mouseDown(with: event)
+    }
 
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
         let text: String

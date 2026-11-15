@@ -3,8 +3,7 @@ import Testing
 
 @testable import MarkdownBrowser
 
-/// Replays `goldens/search.json`, recorded from the editor's JavaScript engine (`web/test/searchGoldens.test.ts`),
-/// so Find in Files keeps matching exactly like the find bar whichever engine runs it.
+/// Replays the former JavaScript editor's recorded results, preserving search semantics without a JS runtime.
 @Suite struct SearchGoldenTests {
     private struct Goldens: Decodable {
         struct Doc: Decodable {

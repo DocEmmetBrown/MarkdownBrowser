@@ -1,4 +1,4 @@
-//! Replays goldens/search.json, recorded from the editor's JavaScript engine (web/test/searchGoldens.test.ts).
+//! Replays goldens/search.json, recorded from the former JavaScript editor's search engine.
 
 use std::collections::BTreeMap;
 

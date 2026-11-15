@@ -3,7 +3,7 @@
 A fixture for checking rendering against GitHub. Open this folder in the app.
 
 > [!NOTE]
-> Cmd+click a link to follow it. Click anywhere to edit; the Markdown source appears where the caret is.
+> Click rendered blocks to edit their source in place. Cmd+click links to follow them; Cmd+U reveals all Markdown source.
 
 ## Text formatting
 
