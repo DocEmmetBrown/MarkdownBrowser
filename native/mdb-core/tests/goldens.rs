@@ -251,3 +251,36 @@ fn search_matches_the_javascript_engine() {
             .join("\n")
     );
 }
+
+#[test]
+fn replaces_only_the_selected_match_with_full_document_regex_context() {
+    let searcher = Searcher::new(SearchQuery {
+        search: r"(?<=😀 )(foo)(?=!)".into(),
+        case_sensitive: true,
+        regexp: true,
+    });
+    assert_eq!(
+        searcher.replace_match("😀 foo! foo!".into(), "\n".into(), 1, 3, "$1x".into()),
+        Some("😀 foox! foo!".into())
+    );
+
+    let searcher = Searcher::new(SearchQuery {
+        search: "foo".into(),
+        case_sensitive: true,
+        regexp: false,
+    });
+    assert_eq!(
+        searcher.replace_match(
+            "first\r\nfoo\r\nfoo\r\n".into(),
+            "\r\n".into(),
+            2,
+            0,
+            "bar".into()
+        ),
+        Some("first\r\nbar\r\nfoo\r\n".into())
+    );
+    assert_eq!(
+        searcher.replace_match("first\r\nfoo".into(), "\r\n".into(), 2, 1, "bar".into()),
+        None
+    );
+}

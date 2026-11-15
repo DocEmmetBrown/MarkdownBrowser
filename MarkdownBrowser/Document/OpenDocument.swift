@@ -8,7 +8,7 @@ nonisolated struct EditorSnapshot: Sendable {
     let dirty: Bool
 }
 
-/// The editor that holds a document's live text (the web editor in the app, a fake in tests).
+/// The editor that holds a document's live text.
 protocol DocumentEditor: AnyObject {
     func snapshot(docId: Int) async -> EditorSnapshot?
     func markSaved(docId: Int, snapshotId: Int) async
@@ -17,6 +17,28 @@ protocol DocumentEditor: AnyObject {
     func text(docId: Int) async -> String?
     /// Applies a programmatic edit as an undoable change that leaves the document unsaved.
     func applyText(docId: Int, text: String)
+}
+
+@MainActor
+protocol WorkspaceEditor: DocumentEditor {
+    var onDirtyChange: (Int, Bool) -> Void { get set }
+    var onUnsavedText: (Int, String) -> Void { get set }
+    var onOpenLink: (Int, String, Bool) -> Void { get set }
+    var onFindStatus: (Int, FindStatus) -> Void { get set }
+
+    func load(_ document: OpenDocument, rootURL: URL?, anchor: String?)
+    func setSourceMode(_ on: Bool)
+    func scrollToAnchor(_ fragment: String)
+    func reveal(docId: Int, line: Int, column: Int, length: Int)
+    func refreshMedia()
+    func focus()
+    func setFindQuery(docId: Int, _ model: FindBarModel)
+    func findNext(docId: Int, wrap: Bool)
+    func findPrevious(docId: Int, wrap: Bool)
+    func replaceCurrent(docId: Int, wrap: Bool)
+    func replaceAll(docId: Int)
+    func selectAllMatches(docId: Int)
+    func closeFind()
 }
 
 enum SaveOutcome: Equatable {
@@ -46,7 +68,7 @@ final class OpenDocument: Identifiable {
     var lastError: String?
 
     @ObservationIgnored weak var editor: DocumentEditor?
-    /// Latest unsaved text reported by the editor, restored if its web process dies.
+    /// Latest unsaved text reported by the editor, retained until it is saved or replaced.
     @ObservationIgnored var unsavedText: String?
     @ObservationIgnored private var diskHash: Data
     @ObservationIgnored private var watcher: FileWatcher?

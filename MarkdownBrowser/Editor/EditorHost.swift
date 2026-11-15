@@ -3,7 +3,7 @@ import WebKit
 import os
 
 /// Owns the window's web view running the CodeMirror editor and bridges messages in both directions.
-final class EditorHost: NSObject, DocumentEditor {
+final class EditorHost: NSObject, WorkspaceEditor {
     let webView: WKWebView
     let schemeHandler: LocalResourceSchemeHandler
 

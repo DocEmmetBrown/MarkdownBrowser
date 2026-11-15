@@ -113,6 +113,56 @@ impl Searcher {
             count,
         }
     }
+
+    /// Replaces the match at the given 1-based line and UTF-16 column, preserving regex context.
+    pub fn replace_match(
+        &self,
+        text: String,
+        line_separator: String,
+        line: u32,
+        column: u32,
+        template: String,
+    ) -> Option<String> {
+        let doc = Doc::new(&text, &line_separator);
+        let line_index = line.checked_sub(1)? as usize;
+        let from = *doc.line_starts.get(line_index)? + column as usize;
+        if from > doc.line_end(line_index) {
+            return None;
+        }
+
+        let mut selected = None;
+        self.matcher.each(&doc, |found| {
+            if found.from == from {
+                selected = Some(found);
+                false
+            } else {
+                true
+            }
+        });
+        let found = selected?;
+
+        let original: Vec<u16> = text.encode_utf16().collect();
+        let separator_extra = line_separator.encode_utf16().count().max(1) - 1;
+        let original_offset = |position: usize| position + doc.line_at(position) * separator_extra;
+        let start = original_offset(found.from);
+        let end = original_offset(found.to);
+        let replacement = if self.regexp {
+            expand(&template, &found, &doc.units)
+        } else {
+            template
+        };
+        let replacement = if line_separator == "\n" {
+            replacement
+        } else {
+            replacement.replace('\n', &line_separator)
+        };
+
+        let mut output = Vec::with_capacity(original.len() + replacement.len());
+        output.extend_from_slice(&original[..start]);
+        output.extend(replacement.encode_utf16());
+        output.extend_from_slice(&original[end..]);
+        Some(String::from_utf16_lossy(&output))
+    }
 }
 
 /// The document as CodeMirror's `Text.of(text.split(lineSeparator))`: lines joined with `\n`.

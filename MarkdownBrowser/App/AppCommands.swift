@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppCommands: Commands {
     @AppStorage(AppSettings.wrapLongLinesKey) private var wrapLongLines = true
+    @AppStorage(AppSettings.nativeEditorKey) private var nativeEditor = false
     private var windows: WindowManager { .shared }
 
     var body: some Commands {
@@ -30,6 +31,7 @@ struct AppCommands: Commands {
         CommandGroup(after: .sidebar) {
             Button("Toggle Markdown Source") { windows.activeController?.toggleSourceMode() }
                 .keyboardShortcut("u")
+                .disabled(nativeEditor)
         }
 
         CommandGroup(before: .windowArrangement) {

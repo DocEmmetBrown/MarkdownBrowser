@@ -15,7 +15,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         }
     }
 
-    /// `nil` follows the system; web content follows too, via the web view's effective appearance.
+    /// `nil` follows the system appearance.
     var nsAppearance: NSAppearance? {
         switch self {
         case .system: nil
@@ -66,6 +66,7 @@ enum AppSettings {
     static let wrapLongLinesKey = "wrapLongLines"
     static let pageMarginsKey = "pageMargins"
     static let limitPageWidthKey = "limitPageWidth"
+    static let nativeEditorKey = "nativeEditor"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -74,6 +75,7 @@ enum AppSettings {
             wrapLongLinesKey: true,
             pageMarginsKey: PageMargins.none.rawValue,
             limitPageWidthKey: false,
+            nativeEditorKey: false,
         ])
     }
 
@@ -86,6 +88,10 @@ enum AppSettings {
 
     static var wrapLongLines: Bool {
         UserDefaults.standard.bool(forKey: wrapLongLinesKey)
+    }
+
+    static var nativeEditor: Bool {
+        UserDefaults.standard.bool(forKey: nativeEditorKey)
     }
 
     static var autosaveOnFocusLoss: Bool {

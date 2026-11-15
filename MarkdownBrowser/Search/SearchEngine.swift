@@ -34,6 +34,17 @@ nonisolated final class SearchEngine {
         return (result.text, Int(result.count))
     }
 
+    func replaceMatch(
+        in text: String, lineSeparator: String, options: SearchOptions, line: Int, column: Int, template: String
+    ) -> String? {
+        searcher(options).replaceMatch(
+            text: text,
+            lineSeparator: lineSeparator,
+            line: UInt32(clamping: line),
+            column: UInt32(clamping: column),
+            template: template)
+    }
+
     private func searcher(_ options: SearchOptions) -> Searcher {
         if let cached, cached.options == options { return cached.searcher }
         let searcher = Searcher(

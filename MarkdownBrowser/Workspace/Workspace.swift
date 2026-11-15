@@ -35,6 +35,7 @@ final class Workspace {
     let find = FindBarModel()
 
     var root: FileNode? { tree?.root }
+    var usesNativeEditor: Bool { editor is NativeEditorHost }
 
     private(set) var selection: URL?
     private(set) var selectionKind: FileKind = .other
@@ -48,7 +49,7 @@ final class Workspace {
     var deniedResource: URL?
     var openError: String?
 
-    @ObservationIgnored let editor = EditorHost()
+    @ObservationIgnored let editor: any WorkspaceEditor
     @ObservationIgnored weak var delegate: WorkspaceDelegate?
     /// Sidebar scroll position, carried over to tabs opened from the sidebar.
     @ObservationIgnored var sidebarScrollOffset: CGFloat = 0
@@ -61,6 +62,7 @@ final class Workspace {
 
     init(url: URL) {
         let url = url.normalizedFileURL
+        editor = AppSettings.nativeEditor ? NativeEditorHost() : EditorHost()
         rootURL = url
         scopes.append(SecurityScope(url: url))
         isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
@@ -91,9 +93,11 @@ final class Workspace {
     }
 
     private func configureEditor() {
-        editor.schemeHandler.isAllowed = { [weak self] url in self?.canAccess(url) ?? false }
-        editor.schemeHandler.onDenied = { [weak self] url in
-            Task { @MainActor [weak self] in self?.deniedResource = url }
+        if let webEditor = editor as? EditorHost {
+            webEditor.schemeHandler.isAllowed = { [weak self] url in self?.canAccess(url) ?? false }
+            webEditor.schemeHandler.onDenied = { [weak self] url in
+                Task { @MainActor [weak self] in self?.deniedResource = url }
+            }
         }
         editor.onDirtyChange = { [weak self] docId, dirty in
             guard let document = self?.document, document.id == docId else { return }
@@ -364,7 +368,7 @@ final class Workspace {
     // MARK: Editing
 
     func toggleSourceMode() {
-        guard let document, document.kind == .markdown else { return }
+        guard let document, document.kind == .markdown, !usesNativeEditor else { return }
         document.sourceMode.toggle()
         editor.setSourceMode(document.sourceMode)
     }

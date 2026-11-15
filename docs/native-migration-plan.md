@@ -153,6 +153,8 @@ Add a hidden `AppSettings.nativeEditor` setting. `DocumentArea` picks the web or
 - Add tree-sitter code highlighting for non-Markdown files.
 - Port `slug` and `markdownLinks`, and add ⌘-click links.
 
+Progress on `feat/native-core`: the hidden setting defaults off, and the native shell uses `NSTextView` with Rust-backed find and replace. It currently edits raw Markdown source only; Markdown styling, live preview, clickable links and code highlighting are still pending. For a local run, set `defaults write com.guillaumewinter.MarkdownBrowser nativeEditor -bool YES`; newly created workspaces use the selected editor. Typed, pasted and plain-text drop insertions use the file's line separator; tests cover the drop reader path and a marked-text commit, but real drag/drop and IME interaction still need manual validation. Anchor lookup handles percent-decoded fragments, the `user-content-` prefix, duplicate heading slugs and explicit HTML `id`/`name` attributes. Full Markdown link parsing and command-click navigation remain pending.
+
 **Phase 4: inline live preview**
 
 Hide syntax away from the cursor. Add bullets, task checkboxes (toggling edits the source), emphasis, links, inline images (local loading through `PathPolicy`, which replaces `LocalResourceSchemeHandler`), emoji (generated table), footnote references and anchors.
