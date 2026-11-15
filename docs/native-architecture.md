@@ -137,6 +137,72 @@ A Swift-only implementation would need replacements for the Rust-backed
 capabilities above and their conformance tests; it is not an existing editor
 setting or fallback.
 
+## Direct-AST presentation investigation
+
+The more useful simplification is **parsing Markdown once**, not replacing the
+specialized Rust engines with Swift equivalents. The current
+[NativeMarkdown](../MarkdownBrowser/Editor/NativeMarkdown.swift) pipeline calls
+`parseMarkdown` for structure and source ranges, then `renderMarkdown` through
+`NativeRenderTree` for presentation. Each Rust entry point parses the same
+Markdown with Comrak and builds its own source map. The rendering entry point
+also formats HTML, sanitizes it with ammonia, reparses it with scraper and copies
+a second flat tree across UniFFI.
+
+A temporary prototype instead built presentation records directly in Swift from
+the first parser result. It reused the existing native render-tree processing
+and UTF-16 mapping so the comparison did not replace those costs with a stub.
+The prototype supported prose, headings, emphasis, links and code, not the full
+document format. It was removed from production sources after measurement.
+
+Local Apple-silicon measurements against baseline `80806e0`, in milliseconds:
+
+| Fixture | Build | Existing pipeline | Direct AST | Speedup |
+|---|---|---:|---:|---:|
+| Small styled paragraph with CRLF and emoji | Debug | 0.924 | 0.282 | 3.27x |
+| Same small fixture | Release | 0.204 | 0.100 | 2.03x |
+| 5,000 styled paragraphs / 10,000 lines | Debug | 1,453.12 | 457.24 | 3.18x |
+| Same 10,000-line fixture | Release | 354.36 | 167.99 | 2.11x |
+| 500 heading / Swift-code-block pairs | Debug | 103.25 | 27.69 | 3.73x |
+| Same code-heavy fixture | Release | 22.05 | 8.17 | 2.70x |
+
+Each value is the median of five warmed samples, alternating existing and direct
+paths in a shared Swift Testing process. Both paths include the first Rust parse,
+FFI transfers, native record indexing and UTF-16 source-map construction. Tests
+required matching rendered block text, source ranges and every mapped block's
+UTF-16 offsets for these fixtures. Both Debug and Release passed. Release used
+`ENABLE_TESTABILITY=YES ENABLE_HARDENED_RUNTIME=NO` only for the local ad-hoc
+test-host invocation; repository build/security settings were not changed.
+
+These are synthetic, feature-limited **model-construction measurements**, not
+end-to-end editing, frame-presentation, memory or full-format parity results.
+They exclude `NativeMarkdown.children` construction, TextKit layout/drawing,
+highlighting and media. Even the direct Release model takes about 168 ms for
+10,000 lines: this does not meet the 16-ms interaction goal. Production still
+uses the original renderer.
+
+### Recommended implementation sequence
+
+1. Extend the parser's typed metadata before replacing rendering. It currently
+   discards table-column alignment and list tightness; `level == 0` also conflates
+   bullet lists with ordered lists starting at zero. Preserve alert type when a
+   custom title is present, and verify footnote ordering/backlinks explicitly.
+2. Build ordinary Markdown presentation directly in Swift, initially reusing the
+   flat native render model to avoid rewriting the views at the same time. Keep
+   Comrak, source ranges and the specialized highlighting/diagram/SVG engines in
+   Rust. Do not serialize the model back into editable source.
+3. Retain the existing whole-document HTML path for documents containing raw
+   HTML until mixed Markdown/HTML behavior has parity. Sanitizing each raw HTML
+   AST node separately is not equivalent: a `<details>` opening and closing tag
+   can surround parsed Markdown across multiple nodes.
+4. Preserve URL policy, trusted HTML provenance, the 5 MB UTF-8 input limit,
+   nesting/node budgets and explicit errors. The prototype's basic link check
+   was not a replacement for the existing sanitizer. Any shared-parse HTML
+   fallback must annotate a rendering copy, not mutate authoritative source.
+5. Gate rollout on full feature/source-map parity tests, representative real
+   documents and Release end-to-end editing measurements. Then consider sharing
+   one Rust parse between structure and any remaining HTML fallback. The local
+   speedup supports this direction, not shipping the partial prototype.
+
 ## Validation and remaining release checks
 
 Automated tests cover parser ranges (Unicode, CRLF), nested/reference links and anchors, source-only styling, stale parse rejection, marked-text preservation, task edits and undo, single-pane layout and resize, inline marker reveal, exact click-to-source positions, word/Shift/drag selection, scrolled caret anchoring, multiline block geometry, common math, resource traversal/symlinks/schemes, sanitization, code highlight ranges, Mermaid PNG generation, saving and search-golden replay.
