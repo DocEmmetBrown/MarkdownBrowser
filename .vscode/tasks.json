@@ -2,7 +2,17 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Build and Run MarkdownBrowser",
+      "label": "Build and Run MarkdownBrowser (No Tests)",
+      "type": "shell",
+      "command": "xcodegen generate && xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build build && open build/Build/Products/Debug/MarkdownBrowser.app",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "inAgents": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Build, Test and Run MarkdownBrowser",
       "type": "shell",
       "command": "cargo test --locked --release --manifest-path native/Cargo.toml && xcodegen generate && xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build test && open build/Build/Products/Debug/MarkdownBrowser.app",
       "options": {

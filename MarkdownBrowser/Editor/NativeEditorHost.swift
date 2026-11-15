@@ -28,7 +28,7 @@ private struct NativeSourceView: NSViewRepresentable {
     }
 }
 
-final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
+final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
     let textView: NativeTextView
     let scrollView: NSScrollView
     let preview = NativePreviewModel()
@@ -614,7 +614,6 @@ final class NativeEditorHost: NSObject, WorkspaceEditor, NSTextViewDelegate {
     }
 
     private func applySettings() {
-        preview.pageLayout = AppSettings.pageLayout
         textView.textContainerInset = NSSize(width: CGFloat(AppSettings.pageLayout.margins.points), height: 16)
         scrollView.hasHorizontalScroller = !AppSettings.wrapLongLines
         textView.isHorizontallyResizable = !AppSettings.wrapLongLines

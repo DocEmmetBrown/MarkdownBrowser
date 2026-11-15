@@ -1,6 +1,6 @@
-//! Find and replace with the semantics of the former JavaScript find bar: CodeMirror's search
-//! cursors over JavaScript regular expressions. Positions are UTF-16 offsets in the document as CodeMirror sees it,
-//! with the file's line separator counting as one `\n`. `goldens/search.json` records the JavaScript results.
+//! Shared native find and replace with ECMAScript regular expressions.
+//! Positions are UTF-16 offsets with the file's line separator counting as one `\n`.
+//! Search behavior retains CodeMirror cursor compatibility, checked by `goldens/search.json`.
 
 use std::sync::Arc;
 
@@ -165,7 +165,7 @@ impl Searcher {
     }
 }
 
-/// The document as CodeMirror's `Text.of(text.split(lineSeparator))`: lines joined with `\n`.
+/// Search text normalized to UTF-16 units with each document line separator replaced by `\n`.
 struct Doc {
     units: Vec<u16>,
     line_starts: Vec<usize>,
@@ -200,7 +200,7 @@ impl Doc {
             .map_or(self.units.len(), |next| next - 1)
     }
 
-    /// CodeMirror's `toCharEnd`: moves past the low half of a surrogate pair.
+    /// Moves past the low half of a surrogate pair.
     fn char_end(&self, mut pos: usize) -> usize {
         while pos < self.units.len() && (0xDC00..0xE000).contains(&self.units[pos]) {
             pos += 1;
@@ -210,7 +210,7 @@ impl Doc {
 }
 
 const NEWLINE: u16 = b'\n' as u16;
-/// CodeMirror's `MultilineRegExpCursor` first flattens this many characters, then doubles.
+/// Initial multiline search window, doubled as more context is needed.
 const CHUNK: usize = 5000;
 
 struct Found {
@@ -231,7 +231,7 @@ impl Matcher {
                 query.case_sensitive,
             );
         }
-        // CodeMirror validates with the base flags "gmu" and compiles with "i" added when ignoring case.
+        // Validate with the base flags before applying case-insensitive matching.
         let flags = |icase| Flags {
             multiline: true,
             unicode: true,
@@ -350,7 +350,7 @@ impl Matcher {
     }
 }
 
-/// CodeMirror's test for patterns that can match line breaks, which it runs over the whole document.
+/// Identifies patterns that need multiline search windows rather than per-line matching.
 fn is_multiline(pattern: &str) -> bool {
     let chars: Vec<char> = pattern.chars().collect();
     chars
@@ -370,7 +370,7 @@ fn shift(captures: &[Option<regress::Range>], by: usize) -> Vec<Option<(usize, u
         .collect()
 }
 
-/// CodeMirror's `SearchCursor` normalization: NFKD, then lowercase when ignoring case.
+/// Literal-search normalization: NFKD, then lowercase when ignoring case.
 fn normalize(text: &str, case_sensitive: bool) -> Vec<u16> {
     let decomposed: String = text.nfkd().collect();
     if case_sensitive {
@@ -393,8 +393,7 @@ fn normalize_char(c: char, case_sensitive: bool, into: &mut Vec<u16>) {
     }
 }
 
-/// A port of CodeMirror's `SearchCursor`, which compares normalized text one UTF-16 unit at a time and maps
-/// positions back to the original text.
+/// Compares normalized UTF-16 units while mapping matches back to original document positions.
 fn literal_matches(
     doc: &Doc,
     query: &[u16],
@@ -465,7 +464,7 @@ fn literal_matches(
     }
 }
 
-/// CodeMirror's replacement expansion (`replacementFor` in engine.ts).
+/// Expands capture references and escaped characters in regex replacement templates.
 fn expand(template: &str, found: &Found, units: &[u16]) -> String {
     let group = |index: usize| -> Option<String> {
         let range = if index == 0 {
@@ -600,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_literal_searches_like_codemirror() {
+    fn normalizes_literal_searches_and_preserves_utf16_positions() {
         assert_eq!(
             find("A needle NEEDLE", "\n", query("NEEDLE", false, false), 10),
             [1, 2, 6, 1, 9, 6]
@@ -631,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn expands_replacements_like_codemirror() {
+    fn expands_regex_replacements_and_preserves_literal_templates() {
         let text = "user@example other@host";
         assert_eq!(
             replace(text, "\n", query("(\\w+)@(\\w+)", true, true), "$2@$1").0,

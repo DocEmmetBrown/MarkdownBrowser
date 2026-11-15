@@ -19,28 +19,6 @@ protocol DocumentEditor: AnyObject {
     func applyText(docId: Int, text: String)
 }
 
-@MainActor
-protocol WorkspaceEditor: DocumentEditor {
-    var onDirtyChange: (Int, Bool) -> Void { get set }
-    var onUnsavedText: (Int, String) -> Void { get set }
-    var onOpenLink: (Int, String, Bool) -> Void { get set }
-    var onFindStatus: (Int, FindStatus) -> Void { get set }
-
-    func load(_ document: OpenDocument, rootURL: URL?, anchor: String?)
-    func setSourceMode(_ on: Bool)
-    func scrollToAnchor(_ fragment: String)
-    func reveal(docId: Int, line: Int, column: Int, length: Int)
-    func refreshMedia()
-    func focus()
-    func setFindQuery(docId: Int, _ model: FindBarModel)
-    func findNext(docId: Int, wrap: Bool)
-    func findPrevious(docId: Int, wrap: Bool)
-    func replaceCurrent(docId: Int, wrap: Bool)
-    func replaceAll(docId: Int)
-    func selectAllMatches(docId: Int)
-    func closeFind()
-}
-
 enum SaveOutcome: Equatable {
     case saved
     case notNeeded

@@ -3,7 +3,7 @@ import Testing
 
 @testable import MarkdownBrowser
 
-/// Replays the former JavaScript editor's recorded results, preserving search semantics without a JS runtime.
+/// Replays the shared search conformance corpus for validation, matching and replacement.
 @Suite struct SearchGoldenTests {
     private struct Goldens: Decodable {
         struct Doc: Decodable {
@@ -34,7 +34,7 @@ import Testing
 
     private final class BundleToken {}
 
-    @Test func searchMatchesTheJavaScriptEngine() throws {
+    @Test func searchMatchesTheConformanceCorpus() throws {
         let url = try #require(
             Bundle(for: BundleToken.self).url(forResource: "search", withExtension: "json", subdirectory: "goldens"))
         let goldens = try JSONDecoder().decode(Goldens.self, from: Data(contentsOf: url))

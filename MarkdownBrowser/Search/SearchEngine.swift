@@ -1,9 +1,8 @@
 import Foundation
 import MdbCore
 
-/// Find and replace with the find bar's semantics (JavaScript regex, CodeMirror's cursors), run natively by the Rust
-/// core (native/mdb-core). goldens/search.json records the JavaScript results it must reproduce. Not thread-safe:
-/// create one per task.
+/// Shared Rust-backed find and replace with ECMAScript regular expressions.
+/// Not thread-safe: create one per task.
 nonisolated final class SearchEngine {
     struct Match: Equatable {
         /// 1-based line number.
@@ -15,7 +14,7 @@ nonisolated final class SearchEngine {
 
     private var cached: (options: SearchOptions, searcher: Searcher)?
 
-    /// The JavaScript-style error message for an invalid regular expression, or nil.
+    /// The validation error for an invalid regular expression, or nil.
     func validate(_ options: SearchOptions) -> String? {
         searcher(options).validationError()
     }

@@ -13,7 +13,7 @@ xcodegen generate
 open MarkdownBrowser.xcodeproj
 ```
 
-The Xcode project is generated and ignored. Edit `project.yml`, not the project. Regenerate after adding, removing or renaming files. Xcode resolves the pinned SwiftMath package automatically; there is no Node/npm toolchain.
+The Xcode project is generated and ignored. Edit `project.yml`, not the project. Regenerate after adding, removing or renaming files. Xcode resolves the pinned SwiftMath package automatically.
 
 ## Architecture
 
@@ -26,7 +26,7 @@ The Xcode project is generated and ignored. Edit `project.yml`, not the project.
 - **NativeMarkdown**: Comrak source ranges, resolved links, headings and styling. After edits, parsing is debounced on a background task; obsolete results are discarded by revision. Only changed style ranges are applied. This is not an incremental parser.
 - **NativePreview**: the native SwiftUI rendering tree embedded in the editor, not a second pane. Tables, task lists, disclosure groups and media use native controls. Task toggles edit only the original checkbox symbol through the editor's undo path. SwiftMath draws math; Rust renders Mermaid to SVG and rasterizes SVG with resvg. Failed diagrams retain source and show an error; failed math retains source and logs the error.
 - **Native core**: `native/mdb-core` provides parsing, sanitizing, syntax highlighting, diagrams and ECMAScript-compatible search through UniFFI. `native/build.sh` builds for `aarch64-apple-darwin` and generates ignored Swift bindings. Unchanged builds are hash-stamped.
-- **Search**: the find bar and Find in Files share `SearchEngine` and Rust `regress`. `goldens/search.json` is the static reference recorded from the former JavaScript implementation; replaying it requires no JavaScript.
+- **Search**: the find bar and Find in Files share `SearchEngine` and Rust `regress`. `goldens/search.json` defines the search conformance corpus replayed by both Rust and Swift tests.
 
 Rendered inline labels use read-only `NSTextView` instances for character-level link hit testing, including Command/Shift modifiers. Their attributed text and math attachments are display-only; they never enter the editable document's text storage.
 
@@ -52,7 +52,7 @@ The native build phase declares the generated Swift/C/modulemap and Rust archive
 
 **Swift concurrency.** The app defaults to main-actor isolation. Pure values used in background tasks must be `nonisolated` and `Sendable`. Do not parse, highlight code or render diagrams on each keystroke on the main actor.
 
-**Dependencies.** Reuse the existing libraries. Review the Cargo lockfile and exact SwiftPM version when updating dependencies. Do not add a browser or Node-based build step.
+**Dependencies.** Reuse the existing libraries. Review the Cargo lockfile and exact SwiftPM version when updating dependencies. Keep rendering and build dependencies native.
 
 Syntax highlighting uses syntect with `two-face`'s bat-curated grammars; syntect's default set omits Swift and TypeScript. Keep `syntect-fancy` aligned with syntect's pure-Rust regex backend. Tests check actual native token colors in both appearances, not just successful highlighting calls.
 
@@ -71,7 +71,9 @@ cargo run --locked --manifest-path native/Cargo.toml --example syntax_notices --
 
 ## Validation
 
-The VS Code **Build and Run MarkdownBrowser** task tests Rust, generates the project, runs Swift tests and launches only on success. Swift CI remains manual while the repository is private; the Linux Rust job runs on pushes/PRs.
+The VS Code **Build and Run MarkdownBrowser (No Tests)** task generates the project, builds the native app and launches only on success, without running tests. **Build, Test and Run MarkdownBrowser** also tests Rust and runs Swift tests before launching. Swift CI remains manual while the repository is private; the Linux Rust job runs on pushes/PRs.
+
+Dependabot opens Cargo and GitHub Actions updates for review; dependency PRs are not automatically merged.
 
 ```sh
 cargo fmt --manifest-path native/Cargo.toml --check
@@ -95,7 +97,7 @@ Open `Samples/` for the manual checks:
 8. Test resource permission requests and root-relative images after changing the sidebar folder.
 9. Run `cli/mdb` with the current directory and explicit paths.
 
-Images/diagrams and the Edit Markdown Source context/accessibility actions target their source construct. Unmapped HTML retains an enclosing-block fallback. Math/Mermaid and HTML/CSS fidelity differ from browser renderers; keep the [migration status](native-migration-plan.md) and README honest about limitations. Automated accessibility actions and marked-text tests do not establish live VoiceOver or physical IME parity.
+Images/diagrams and the Edit Markdown Source context/accessibility actions target their source construct. Unmapped HTML retains an enclosing-block fallback. Math/Mermaid and HTML/CSS support is limited; keep [native architecture and validation](native-architecture.md) and the README honest about limitations. Automated accessibility actions and marked-text tests do not establish live VoiceOver or physical IME parity.
 
 ## Releasing
 

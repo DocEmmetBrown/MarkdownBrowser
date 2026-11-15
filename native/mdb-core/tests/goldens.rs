@@ -1,4 +1,4 @@
-//! Replays goldens/search.json, recorded from the former JavaScript editor's search engine.
+//! Replays the shared search conformance corpus in goldens/search.json.
 
 use std::collections::BTreeMap;
 
@@ -150,7 +150,7 @@ impl Reader<'_> {
 }
 
 #[test]
-fn search_matches_the_javascript_engine() {
+fn search_matches_the_conformance_corpus() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../goldens/search.json");
     let text = std::fs::read_to_string(path).expect("goldens/search.json");
     let goldens = Reader {

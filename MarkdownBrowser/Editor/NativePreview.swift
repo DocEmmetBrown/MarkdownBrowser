@@ -10,7 +10,6 @@ import os
 nonisolated struct NativeRenderTree: Sendable {
     let nodes: [RenderNode]
     let children: [[Int]]
-    let roots: [Int]
     let source: String
     let sourceMaps: [Int: NativeRenderedSourceMap]
     let sourceRanges: [Int: NSRange]
@@ -42,16 +41,12 @@ nonisolated struct NativeRenderTree: Sendable {
         }
         nodes = records
         var children = Array(repeating: [Int](), count: nodes.count)
-        var roots: [Int] = []
         for (index, node) in nodes.enumerated() {
             if let parent = node.parent {
                 children[Int(parent)].append(index)
-            } else {
-                roots.append(index)
             }
         }
         self.children = children
-        self.roots = roots
         var sourceChildren = Array(repeating: [Int](), count: structure.count)
         for (index, node) in structure.enumerated() {
             if let parent = node.parent { sourceChildren[Int(parent)].append(index) }
@@ -134,7 +129,6 @@ final class NativePreviewModel {
     var editBlock: (Int) -> Void = { _ in }
     var editText: (Int, Int, NSEvent) -> Void = { _, _, _ in }
     var editPosition: (Int, Int) -> Void = { _, _ in }
-    var pageLayout = AppSettings.pageLayout
     let logger = Logger(subsystem: "MarkdownBrowser", category: "NativePreview")
 
     func resourceURL(_ href: String) throws -> URL {
