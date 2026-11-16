@@ -429,7 +429,7 @@ import Testing
         host.load(document, rootURL: nil, anchor: nil)
         let paragraph = (source as NSString).range(of: "**bold** and [guide](guide.md)")
         #expect(host.liveLayout.concealed.contains(paragraph.location))
-        #expect(!host.liveLayout.concealed.contains(0))
+        #expect(host.liveLayout.concealed.contains(0))
         host.livePreview.reveal(paragraph)
         #expect(host.textView.selectedRange().location == paragraph.location)
         #expect(!host.liveLayout.concealed.contains(paragraph.location))
@@ -443,6 +443,35 @@ import Testing
         #expect(host.liveLayout.concealed.contains(0))
         #expect(host.textView.selectedRange() == selection)
         #expect(!(try #require(await host.snapshot(docId: document.id))).dirty)
+    }
+
+    @Test func openingOrFollowingAnAnchorKeepsTheCaretBlockRenderedUntilTheUserActs() throws {
+        let source = "# First\n\nbody\n\n## Second\n\nmore\n"
+        let (document, url) = try makeDocument(source)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let host = NativeEditorHost()
+        host.load(document, rootURL: nil, anchor: nil)
+        #expect(host.textView.selectedRange() == NSRange(location: 0, length: 0))
+        #expect(host.liveLayout.concealed.contains(0))
+        host.livePreview.reveal(NSRange(location: 0, length: 0))
+        #expect(!host.liveLayout.concealed.contains(0))
+
+        let second = (source as NSString).range(of: "## Second").location
+        host.load(document, rootURL: nil, anchor: "second")
+        #expect(host.textView.selectedRange() == NSRange(location: second, length: 0))
+        #expect(host.liveLayout.concealed.contains(0))
+        #expect(host.liveLayout.concealed.contains(second))
+
+        host.load(document, rootURL: nil, anchor: nil)
+        host.textView.setSelectedRange(NSRange(location: 1, length: 0))
+        #expect(!host.liveLayout.concealed.contains(0))
+
+        host.load(document, rootURL: nil, anchor: nil)
+        host.textView.deleteForward(nil)
+        host.ensureMarkdown()
+        #expect(host.textView.selectedRange() == NSRange(location: 0, length: 0))
+        #expect(!host.liveLayout.concealed.contains(0))
+        #expect(host.textView.string == " First\n\nbody\n\n## Second\n\nmore\n")
     }
 
     @Test func concealedMultilineBlocksReserveOneRenderedRectangle() {

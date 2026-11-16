@@ -257,6 +257,9 @@ final class NativeLivePreviewController: NSObject {
     private var generation = 0
     private var interactionLocation: Int?
     private var pinnedCaret: (position: Int, viewportY: CGFloat)?
+    /// A caret placed by the app (opening a file, following an anchor) rather than the user.
+    /// It keeps its block rendered until the selection moves or the user interacts.
+    var restingCaret: Int?
     var reveal: (NSRange) -> Void = { _ in }
     var interact: (Int, NSEvent) -> Void = { _, _ in }
 
@@ -277,6 +280,7 @@ final class NativeLivePreviewController: NSObject {
                 self.pinnedCaret = (position, textView.convert(event.locationInWindow, from: nil).y - textView.visibleRect.minY)
             }
             self.interactionLocation = position
+            self.restingCaret = nil
             self.updateSelection()
             self.interact(position, event)
             self.interactionLocation = nil
@@ -298,6 +302,7 @@ final class NativeLivePreviewController: NSObject {
         tree = nil
         pendingEdit = nil
         pinnedCaret = nil
+        restingCaret = nil
         interactionLocation = nil
         heights = [:]
         removeViews()
@@ -315,6 +320,7 @@ final class NativeLivePreviewController: NSObject {
 
     func prepareForEdit(_ range: NSRange, length: Int) {
         pendingEdit = (range, length)
+        restingCaret = nil
         concealments = []
         markers = []
         displayed.removeAll { NSIntersectionRange($0.range, range).length > 0 || NSLocationInRange(range.location, $0.range) }
@@ -352,8 +358,13 @@ final class NativeLivePreviewController: NSObject {
            textView.selectedRange() != NSRange(location: pinnedCaret.position, length: 0) {
             self.pinnedCaret = nil
         }
+        let selected = textView.selectedRanges.map(\.rangeValue)
+        if let restingCaret, selected != [NSRange(location: restingCaret, length: 0)] {
+            self.restingCaret = nil
+        }
+        let active = restingCaret == nil ? selected : []
         let source = textView.string as NSString
-        let selections = textView.selectedRanges.map(\.rangeValue).map {
+        let selections = active.map {
             source.lineRange(for: NSIntersectionRange($0, NSRange(location: 0, length: source.length)))
         }
         displayed = model.isVisible ? plans.filter { plan in
@@ -364,9 +375,8 @@ final class NativeLivePreviewController: NSObject {
             }
         } : []
         markers = model.isVisible && interactionLocation == nil ? concealments.filter { inline in
-            !textView.selectedRanges.contains { selected in
-                let range = selected.rangeValue
-                return NSIntersectionRange(inline.range, range).length > 0
+            !active.contains { range in
+                NSIntersectionRange(inline.range, range).length > 0
                     || (range.location >= inline.range.location && range.location <= NSMaxRange(inline.range))
             }
         }.flatMap(\.markers) : []
