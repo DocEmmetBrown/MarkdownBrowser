@@ -347,4 +347,26 @@ import Testing
         #expect(workspace.isSidebarVisible)
         #expect(workspace.filter.focusRequested)
     }
+
+    @Test func doubleClickingAFolderResultOpensItInTheSidebar() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(url: root)
+        defer { workspace.close() }
+        let deep = root.appending(path: "docs/deep").normalizedFileURL
+        let result = FilterResult(url: deep, name: "deep", folder: "docs", isDirectory: true, score: 0)
+
+        workspace.filter.setQuery("deep")
+        await workspace.activateFromFilter(result, .open)
+        #expect(workspace.rootURL == root.normalizedFileURL)
+        #expect(workspace.expanded.contains(deep))
+        #expect(workspace.pendingReveal == deep)
+        #expect(!workspace.filter.isActive)
+
+        workspace.filter.setQuery("deep")
+        await workspace.activateFromFilter(result, .pin)
+        #expect(workspace.rootURL == deep)
+        #expect(workspace.root?.children?.map(\.name) == ["readme-deep.md"])
+        #expect(!workspace.filter.isActive)
+    }
 }

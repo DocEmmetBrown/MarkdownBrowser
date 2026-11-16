@@ -110,14 +110,19 @@ extension Workspace {
         }
     }
 
-    /// Opens a filter result like a sidebar click. A folder can't be opened, so it's revealed in the tree instead.
+    /// Opens a filter result like a sidebar click. A double-clicked folder opens in the sidebar, as in the tree;
+    /// otherwise a folder is revealed in the tree.
     func activateFromFilter(_ result: FilterResult, _ activation: FileOutlineView.Activation) async {
         guard result.isDirectory else {
             await activateFromSidebar(result.url, activation)
             return
         }
-        await open(result.url)
-        pendingReveal = result.url
+        if activation == .pin {
+            guard await setRoot(result.url) else { return }
+        } else {
+            await open(result.url)
+            pendingReveal = result.url
+        }
         filter.clear()
     }
 }
