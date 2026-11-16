@@ -6,7 +6,7 @@ import SwiftUI
 struct FileOutlineView: NSViewRepresentable {
     enum Activation {
         case open
-        /// Double-click: open and keep the tab.
+        /// Double-click: open a file and keep its tab, or open a folder in the sidebar.
         case pin
         case openInNewTab
     }

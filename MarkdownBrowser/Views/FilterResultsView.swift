@@ -141,7 +141,10 @@ private struct FilterResultsTable: NSViewRepresentable {
         }
 
         @objc func clicked(_ sender: NSTableView) {
-            activate(sender.clickedRow, .open)
+            let row = sender.clickedRow
+            // A click on a folder only selects it, keeping the results up for a double-click to open it.
+            guard row >= 0, row < results.count, !results[row].isDirectory else { return }
+            activate(row, .open)
         }
 
         @objc func doubleClicked(_ sender: NSTableView) {
@@ -163,12 +166,20 @@ private struct FilterResultsTable: NSViewRepresentable {
             menu.removeAllItems()
             guard let table, table.clickedRow >= 0, table.clickedRow < results.count else { return }
             let result = results[table.clickedRow]
-            if !result.isDirectory {
+            if result.isDirectory {
+                let open = menu.addItem(
+                    withTitle: "Open Folder in Sidebar", action: #selector(openFolderInSidebar(_:)), keyEquivalent: "")
+                open.target = self
+                open.representedObject = table.clickedRow
+                let reveal = menu.addItem(withTitle: "Reveal in Sidebar", action: #selector(revealInSidebar(_:)), keyEquivalent: "")
+                reveal.target = self
+                reveal.representedObject = table.clickedRow
+            } else {
                 let open = menu.addItem(withTitle: "Open in New Tab", action: #selector(openInNewTab(_:)), keyEquivalent: "")
                 open.target = self
                 open.representedObject = table.clickedRow
-                menu.addItem(.separator())
             }
+            menu.addItem(.separator())
             let reveal = menu.addItem(withTitle: "Reveal in Finder", action: #selector(revealInFinder(_:)), keyEquivalent: "")
             reveal.target = self
             reveal.representedObject = result.url
@@ -177,6 +188,16 @@ private struct FilterResultsTable: NSViewRepresentable {
         @objc private func openInNewTab(_ item: NSMenuItem) {
             guard let row = item.representedObject as? Int else { return }
             activate(row, .openInNewTab)
+        }
+
+        @objc private func openFolderInSidebar(_ item: NSMenuItem) {
+            guard let row = item.representedObject as? Int else { return }
+            activate(row, .pin)
+        }
+
+        @objc private func revealInSidebar(_ item: NSMenuItem) {
+            guard let row = item.representedObject as? Int else { return }
+            activate(row, .open)
         }
 
         @objc private func revealInFinder(_ item: NSMenuItem) {
