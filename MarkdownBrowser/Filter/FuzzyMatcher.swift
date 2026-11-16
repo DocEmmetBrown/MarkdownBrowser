@@ -1,9 +1,10 @@
 import Foundation
 
-/// Case-insensitive fuzzy matching: the query's characters must appear in the candidate in order, and
-/// alignments that are consecutive, start words and leave fewer gaps score higher ("rdm" → "README.md").
+/// Fuzzy matching, case-insensitive unless asked otherwise: the query's characters must appear in the candidate in
+/// order, and alignments that are consecutive, start words and leave fewer gaps score higher ("rdm" → "README.md").
 nonisolated struct FuzzyMatcher: Sendable {
     private let query: [Unicode.Scalar]
+    private let caseSensitive: Bool
 
     private static let matchScore = 16
     private static let boundaryBonus = 10
@@ -14,10 +15,11 @@ nonisolated struct FuzzyMatcher: Sendable {
     private static let impossible = Int.min / 2
 
     /// `nil` when there's nothing to match: the query is empty or only whitespace.
-    init?(query: String) {
-        let scalars = query.unicodeScalars.filter { !$0.properties.isWhitespace }.map(Self.lowercased)
+    init?(query: String, caseSensitive: Bool = false) {
+        let scalars = query.unicodeScalars.filter { !$0.properties.isWhitespace }
         guard !scalars.isEmpty else { return nil }
-        self.query = scalars
+        self.query = caseSensitive ? Array(scalars) : scalars.map(Self.lowercased)
+        self.caseSensitive = caseSensitive
     }
 
     /// Whether the query is a path (contains "/"), to be matched against whole paths rather than names.
@@ -31,7 +33,7 @@ nonisolated struct FuzzyMatcher: Sendable {
     func score(_ candidate: String) -> Int? {
         guard isSubsequence(candidate) else { return nil }
         let original = Array(candidate.unicodeScalars)
-        let lowered = original.map(Self.lowercased)
+        let lowered = caseSensitive ? original : original.map(Self.lowercased)
         let count = original.count
         let none = Self.impossible
 
@@ -64,7 +66,7 @@ nonisolated struct FuzzyMatcher: Sendable {
 
     private func isSubsequence(_ candidate: String) -> Bool {
         var next = 0
-        for scalar in candidate.unicodeScalars where Self.lowercased(scalar) == query[next] {
+        for scalar in candidate.unicodeScalars where (caseSensitive ? scalar : Self.lowercased(scalar)) == query[next] {
             next += 1
             if next == query.count { return true }
         }

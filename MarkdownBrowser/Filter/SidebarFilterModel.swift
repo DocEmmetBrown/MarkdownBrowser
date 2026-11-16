@@ -7,6 +7,9 @@ import Observation
 final class SidebarFilterModel {
     private(set) var query = ""
     private(set) var isRecursive = false
+    private(set) var options = FilterOptions()
+    /// Why the query can't be searched (an invalid regular expression), or nil.
+    private(set) var errorMessage: String?
     private(set) var results: [FilterResult] = []
     private(set) var isSearching = false
     private(set) var isTruncated = false
@@ -26,7 +29,9 @@ final class SidebarFilterModel {
         self.debounce = debounce
     }
 
-    var isActive: Bool { FuzzyMatcher(query: query) != nil }
+    var isActive: Bool {
+        options.regex ? !query.isEmpty : FuzzyMatcher(query: query) != nil
+    }
 
     /// The result Return would open: the one chosen with the arrow keys or mouse, else the best match.
     var selected: FilterResult? {
@@ -43,6 +48,13 @@ final class SidebarFilterModel {
     func setRecursive(_ isRecursive: Bool) {
         guard isRecursive != self.isRecursive else { return }
         self.isRecursive = isRecursive
+        refresh()
+    }
+
+    func setOptions(_ options: FilterOptions) {
+        guard options != self.options else { return }
+        self.options = options
+        chosen = nil
         refresh()
     }
 
@@ -71,6 +83,7 @@ final class SidebarFilterModel {
     func adopt(_ other: SidebarFilterModel) {
         query = other.query
         isRecursive = other.isRecursive
+        options = other.options
         refresh()
         chosen = other.chosen
     }
@@ -83,19 +96,27 @@ final class SidebarFilterModel {
     /// Restarts the search for the current query and scope.
     func refresh() {
         task?.cancel()
-        guard let root, isActive else {
+        errorMessage = nil
+        if options.regex, !query.isEmpty,
+           let message = SearchEngine().validate(SearchOptions(query: query, caseSensitive: options.caseSensitive, regex: true))
+        {
+            errorMessage = SearchError.invalidPattern(message).localizedDescription
+        }
+        guard let root, isActive, errorMessage == nil else {
             results = []
             isSearching = false
             isTruncated = false
             return
         }
         isSearching = true
-        let (query, isRecursive) = (query, isRecursive)
+        let (query, options, isRecursive) = (query, options, isRecursive)
         task = Task {
             try? await Task.sleep(for: debounce)
             guard !Task.isCancelled else { return }
             let directories = isRecursive ? [] : visibleDirectories()
-            for await update in FileFilter.run(query: query, root: root, directories: directories, recursive: isRecursive) {
+            for await update in FileFilter.run(
+                query: query, options: options, root: root, directories: directories, recursive: isRecursive)
+            {
                 guard !Task.isCancelled else { return }
                 results = update.results
                 isTruncated = update.isTruncated

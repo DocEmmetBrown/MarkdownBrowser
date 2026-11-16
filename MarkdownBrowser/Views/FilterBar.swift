@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The filter field and its "Include subfolders" option, shown above the sidebar's file tree.
+/// The filter field with its "Include subfolders", match-case and regex options, shown above the sidebar's file tree.
 struct FilterBar: View {
     let workspace: Workspace
 
@@ -22,10 +22,29 @@ struct FilterBar: View {
                 .help("Search all subfolders instead of only the folders shown in the tree")
                 Spacer()
                 if filter.isSearching { ProgressView().controlSize(.small) }
+                HStack(spacing: 2) {
+                    Toggle(isOn: option(\.caseSensitive)) { Text("Aa") }
+                        .help("Match case")
+                    Toggle(isOn: option(\.regex)) { Text(".*").monospaced() }
+                        .help("Use regular expression")
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
             }
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 8)
+    }
+
+    private func option(_ keyPath: WritableKeyPath<FilterOptions, Bool>) -> Binding<Bool> {
+        let filter = workspace.filter
+        return Binding(
+            get: { filter.options[keyPath: keyPath] },
+            set: { value in
+                var options = filter.options
+                options[keyPath: keyPath] = value
+                filter.setOptions(options)
+            })
     }
 
     private func open(newTab: Bool) {

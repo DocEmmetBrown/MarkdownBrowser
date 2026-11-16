@@ -21,7 +21,53 @@ nonisolated struct FilterUpdate: Sendable, Equatable {
     var isTruncated: Bool { matchCount > results.count }
 }
 
-/// Fuzzy file-name search for the sidebar. A query containing "/" is matched against the path relative to the
+/// How the sidebar filter matches: case-insensitive fuzzy by default, optionally case-sensitive, or as an
+/// ECMAScript regular expression (the same engine as Find in Files).
+nonisolated struct FilterOptions: Sendable, Equatable {
+    var caseSensitive = false
+    var regex = false
+}
+
+/// Scores names or paths against one filter query.
+nonisolated struct FilterMatcher {
+    private enum Kind {
+        case fuzzy(FuzzyMatcher)
+        case regex(SearchEngine, SearchOptions)
+    }
+
+    private let kind: Kind
+    /// Whether the query contains "/", so it is matched against the relative path rather than the name.
+    let isPathQuery: Bool
+
+    /// `nil` when there's nothing to match or the regular expression is invalid.
+    init?(query: String, options: FilterOptions) {
+        if options.regex {
+            let search = SearchOptions(query: query, caseSensitive: options.caseSensitive, regex: true)
+            let engine = SearchEngine()
+            guard !query.isEmpty, engine.validate(search) == nil else { return nil }
+            kind = .regex(engine, search)
+            isPathQuery = query.contains("/")
+        } else {
+            guard let fuzzy = FuzzyMatcher(query: query, caseSensitive: options.caseSensitive) else { return nil }
+            kind = .fuzzy(fuzzy)
+            isPathQuery = fuzzy.isPathQuery
+        }
+    }
+
+    /// How well `candidate` matches, or `nil` when it doesn't. Regular expressions rank earlier matches higher.
+    func score(_ candidate: String) -> Int? {
+        switch kind {
+        case .fuzzy(let fuzzy):
+            return fuzzy.score(candidate)
+        case .regex(let engine, let search):
+            guard let match = engine.matches(in: candidate, lineSeparator: "\n", options: search, limit: 1).first
+            else { return nil }
+            return -match.column
+        }
+    }
+}
+
+/// File-name search for the sidebar. A query containing "/" is matched against the path relative to the
 /// workspace folder instead of the name, so "docs/rdm" finds "docs/README.md".
 nonisolated enum FileFilter {
     static let maxResults = 500
@@ -30,10 +76,12 @@ nonisolated enum FileFilter {
 
     /// Streams growing snapshots of the best matches, ending with a complete one; nothing is yielded when cancelled.
     /// Non-recursive searches list only `directories` (the levels the tree shows); recursive ones walk all of `root`.
-    static func run(query: String, root: URL, directories: [URL], recursive: Bool) -> AsyncStream<FilterUpdate> {
+    static func run(
+        query: String, options: FilterOptions = FilterOptions(), root: URL, directories: [URL], recursive: Bool
+    ) -> AsyncStream<FilterUpdate> {
         AsyncStream { continuation in
             let task = Task.detached(priority: .userInitiated) {
-                guard let matcher = FuzzyMatcher(query: query) else {
+                guard let matcher = FilterMatcher(query: query, options: options) else {
                     continuation.finish()
                     return
                 }
@@ -58,9 +106,13 @@ nonisolated enum FileFilter {
     }
 
     /// The final result of a search, for callers that don't need progress.
-    static func results(query: String, root: URL, directories: [URL], recursive: Bool) async -> FilterUpdate {
+    static func results(
+        query: String, options: FilterOptions = FilterOptions(), root: URL, directories: [URL], recursive: Bool
+    ) async -> FilterUpdate {
         var last = FilterUpdate()
-        for await update in run(query: query, root: root, directories: directories, recursive: recursive) {
+        for await update in run(
+            query: query, options: options, root: root, directories: directories, recursive: recursive)
+        {
             last = update
         }
         return last
@@ -87,12 +139,12 @@ nonisolated enum FileFilter {
     }
 
     private struct Collector {
-        let matcher: FuzzyMatcher
+        let matcher: FilterMatcher
         let rootPath: String
         private(set) var results: [FilterResult] = []
         private(set) var matchCount = 0
 
-        init(matcher: FuzzyMatcher, rootPath: String) {
+        init(matcher: FilterMatcher, rootPath: String) {
             self.matcher = matcher
             self.rootPath = rootPath
         }

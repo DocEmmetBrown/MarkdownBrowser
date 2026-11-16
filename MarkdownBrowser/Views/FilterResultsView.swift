@@ -12,7 +12,13 @@ struct FilterResultsView: View {
                 FilterResultsTable(results: filter.results, selection: filter.selected?.url, filter: filter) { result, activation in
                     await workspace.activateFromFilter(result, activation)
                 }
-                if filter.results.isEmpty, !filter.isSearching {
+                if let error = filter.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(8)
+                } else if filter.results.isEmpty, !filter.isSearching {
                     Text("No matches")
                         .foregroundStyle(.secondary)
                 }
