@@ -71,6 +71,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
         super.init()
         livePreview.reveal = { [weak self] range in
             guard let self else { return }
+            self.livePreview.restingCaret = nil
             self.textView.setSelectedRange(NSRange(location: range.location, length: 0))
             self.livePreview.updateSelection()
             self.textView.scrollRangeToVisible(NSRange(location: range.location, length: 0))
@@ -80,6 +81,11 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
             self?.interactWithSource(at: position, event: event)
         }
         textView.delegate = self
+        textView.didTrackMouse = { [weak self] in
+            guard let self, self.livePreview.restingCaret != nil else { return }
+            self.livePreview.restingCaret = nil
+            self.livePreview.updateSelection()
+        }
         textView.openLink = { [weak self] location, newTab in
             guard let self, let document = self.document, document.kind == .markdown else { return false }
             self.ensureMarkdown()
@@ -133,6 +139,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
         textView.string = document.recoveryText ?? savedText
         resetMarkdown()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
+        livePreview.restingCaret = 0
         textView.undoManager?.removeAllActions()
         isLoading = false
         snapshots.removeAll()
@@ -161,7 +168,9 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
         ensureMarkdown()
         let source = textView.string as NSString
         guard let range = markdown?.anchor(fragment) ?? explicitAnchorRange(in: source, target: target) else { return }
+        livePreview.restingCaret = range.location
         textView.setSelectedRange(NSRange(location: range.location, length: 0))
+        livePreview.updateSelection()
         textView.scrollRangeToVisible(range)
     }
 
@@ -645,6 +654,7 @@ final class NativeTextView: NSTextView {
     var lineSeparator = "\n"
     var openLink: (Int, Bool) -> Bool = { _, _ in false }
     var updateLiveViews: () -> Void = {}
+    var didTrackMouse: () -> Void = {}
 
     func insertionRect(at position: Int) -> NSRect? {
         guard let layout = layoutManager, let storage = textStorage, let container = textContainer,
@@ -712,6 +722,7 @@ final class NativeTextView: NSTextView {
             if openLink(location, event.modifierFlags.contains(.shift)) { return }
         }
         super.mouseDown(with: event)
+        didTrackMouse()
     }
 
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
