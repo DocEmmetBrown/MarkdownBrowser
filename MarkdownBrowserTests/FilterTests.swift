@@ -22,6 +22,12 @@ import Testing
         #expect(score("rm", "README.md") == score("RM", "readme.md"))
     }
 
+    @Test func matchCaseRequiresTheQueryCase() {
+        #expect(FuzzyMatcher(query: "RM", caseSensitive: true)?.score("README.md") != nil)
+        #expect(FuzzyMatcher(query: "rm", caseSensitive: true)?.score("README.md") == nil)
+        #expect(FuzzyMatcher(query: "rm", caseSensitive: true)?.score("readme.md") != nil)
+    }
+
     @Test func ignoresWhitespaceInTheQuery() {
         #expect(score(" r d m ", "README.md") == score("rdm", "README.md"))
         #expect(FuzzyMatcher(query: "") == nil)
@@ -135,6 +141,43 @@ import Testing
         #expect(update.results.first?.folder == "docs/deep")
     }
 
+    @Test func regexMatchesNamesOrPathsWithOptionalCase() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let regex = FilterOptions(regex: true)
+        let matchCase = FilterOptions(caseSensitive: true, regex: true)
+
+        let readmes = await FileFilter.results(
+            query: "^readme\\.md$", options: regex, root: root, directories: [], recursive: true)
+        #expect(Set(paths(readmes)) == ["README.md", "docs/deep/readme.md"])
+
+        let upper = await FileFilter.results(
+            query: "^README", options: matchCase, root: root, directories: [], recursive: true)
+        #expect(paths(upper) == ["README.md"])
+
+        let text = await FileFilter.results(query: "\\.txt$", options: regex, root: root, directories: [], recursive: true)
+        #expect(paths(text) == ["readme-extra.txt"])
+
+        let docs = await FileFilter.results(
+            query: "^docs/.+\\.md$", options: regex, root: root, directories: [], recursive: true)
+        #expect(Set(paths(docs)) == ["docs/guide.md", "docs/deep/readme.md"])
+
+        // Not fuzzy: "rdm" isn't a substring of any name.
+        let literal = await FileFilter.results(query: "rdm", options: regex, root: root, directories: [], recursive: true)
+        #expect(literal.results.isEmpty)
+        #expect(literal.isComplete)
+    }
+
+    @Test func regexRanksEarlierMatchesFirst() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let update = await FileFilter.results(
+            query: "d", options: FilterOptions(regex: true), root: root, directories: [root], recursive: false)
+        #expect(update.results.first?.name == "docs")
+        #expect(update.results.last?.name == "notes.md")
+        #expect(update.results.map(\.score) == update.results.map(\.score).sorted(by: >))
+    }
+
     @Test func capsResults() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -216,6 +259,40 @@ import Testing
         model.setRecursive(false)
         try await settle(model)
         #expect(model.results.count == 1)
+    }
+
+    @Test func optionsSwitchMatchingAndReportInvalidPatterns() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = SidebarFilterModel(root: root, debounce: .milliseconds(1))
+        model.visibleDirectories = { [root] }
+
+        model.setQuery("readme")
+        try await settle(model)
+        #expect(model.results.map(\.name) == ["README.md"])
+
+        model.setOptions(FilterOptions(caseSensitive: true))
+        try await settle(model)
+        #expect(model.results.isEmpty)
+
+        model.setQuery("(")
+        model.setOptions(FilterOptions(regex: true))
+        #expect(model.isActive)
+        #expect(model.errorMessage != nil)
+        #expect(model.results.isEmpty)
+        #expect(!model.isSearching)
+
+        model.setQuery("^n.*s\\.md$")
+        #expect(model.errorMessage == nil)
+        try await settle(model)
+        #expect(model.results.map(\.name) == ["notes.md"])
+
+        let copy = SidebarFilterModel(root: root, debounce: .milliseconds(1))
+        copy.visibleDirectories = { [root] }
+        copy.adopt(model)
+        #expect(copy.options == model.options)
+        try await settle(copy)
+        #expect(copy.results.map(\.name) == ["notes.md"])
     }
 
     @Test func arrowKeysMoveTheSelectionWithinTheResults() async throws {

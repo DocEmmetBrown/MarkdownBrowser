@@ -26,7 +26,7 @@ The Xcode project is generated and ignored. Edit `project.yml`, not the project.
 - **NativeMarkdown**: Comrak source ranges, resolved links, headings and styling. After edits, parsing is debounced on a background task; obsolete results are discarded by revision. Only changed style ranges are applied. This is not an incremental parser.
 - **NativePreview**: the native SwiftUI rendering tree embedded in the editor, not a second pane. Tables, task lists, disclosure groups and media use native controls. Task toggles edit only the original checkbox symbol through the editor's undo path. SwiftMath draws math; Rust renders Mermaid to SVG and rasterizes SVG with resvg. Failed diagrams retain source and show an error; failed math retains source and logs the error.
 - **Native core**: `native/mdb-core` provides parsing, sanitizing, syntax highlighting, diagrams and ECMAScript-compatible search through UniFFI. `native/build.sh` builds for `aarch64-apple-darwin` and generates ignored Swift bindings. Unchanged builds are hash-stamped.
-- **Search**: the find bar and Find in Files share `SearchEngine` and Rust `regress`. `goldens/search.json` defines the search conformance corpus replayed by both Rust and Swift tests.
+- **Search**: the find bar, Find in Files and the sidebar filter's regex mode share `SearchEngine` and Rust `regress`. `goldens/search.json` defines the search conformance corpus replayed by both Rust and Swift tests.
 
 Rendered inline labels use read-only `NSTextView` instances for character-level link hit testing, including Command/Shift modifiers. Their attributed text and math attachments are display-only; they never enter the editable document's text storage.
 
