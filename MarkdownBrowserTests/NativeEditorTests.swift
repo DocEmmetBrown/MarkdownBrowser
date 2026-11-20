@@ -887,7 +887,14 @@ import Testing
         var view = try await rendered()
         let bold = (source as NSString).range(of: "**repeat**")
         var position = (view.string as NSString).range(of: "repeat").location + 2
+        var mappedPosition: Int?
+        let interact = host.livePreview.interact
+        host.livePreview.interact = { position, event in
+            mappedPosition = position
+            interact(position, event)
+        }
         try postClick(in: window, at: clickPoint(in: view, at: position), targeting: view)
+        #expect(mappedPosition == bold.location + 4)
         try await waitUntil { host.textView.selectedRange() == NSRange(location: bold.location + 4, length: 0) }
         #expect(window.firstResponder === host.textView)
         host.textView.moveRightAndModifySelection(nil)
