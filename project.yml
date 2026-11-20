@@ -107,7 +107,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.guillaumewinter.MarkdownBrowser
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "1.1"
         CURRENT_PROJECT_VERSION: "1"
         ENABLE_HARDENED_RUNTIME: YES
         GENERATE_INFOPLIST_FILE: NO
