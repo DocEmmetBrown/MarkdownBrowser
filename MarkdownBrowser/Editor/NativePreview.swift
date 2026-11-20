@@ -259,7 +259,18 @@ struct NativePreviewBlock: View {
                 }
             }.padding(.leading, 8)
         case "li":
-            VStack(alignment: .leading, spacing: 4) { blocks }
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(inlineRuns(index).enumerated()), id: \.offset) { _, run in
+                    if run.count == 1, !isInline(run[0]) {
+                        NativePreviewBlock(tree: tree, index: run[0], model: model)
+                    } else if run.contains(where: { !tree.nodes[$0].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tree.nodes[$0].tag != "#text" }) {
+                        // Tight list items hold inline nodes directly; render each run as one text view.
+                        NativeInlineText(tree: tree, index: index, model: model, dark: colorScheme == .dark, runs: run)
+                            .textSelection(.disabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
         case "pre":
             let child = tree.children[index].first { tree.nodes[$0].tag == "code" }
             let language = child.flatMap { tree.nodes[$0].attributes["class"] }?
@@ -330,6 +341,28 @@ struct NativePreviewBlock: View {
         }
     }
 
+    private func isInline(_ child: Int) -> Bool {
+        let inlineTags: Set<String> = ["#text", "code", "a", "strong", "em", "del", "b", "i", "s", "strike",
+            "kbd", "sup", "sub", "br", "span", "mark", "u"]
+        return inlineTags.contains(tree.nodes[child].tag) && !containsMedia(child)
+    }
+
+    /// Groups consecutive inline children into runs; every block child is its own run.
+    private func inlineRuns(_ index: Int) -> [[Int]] {
+        var runs: [[Int]] = []
+        var current: [Int] = []
+        for child in tree.children[index] {
+            if isInline(child) {
+                current.append(child)
+            } else {
+                if !current.isEmpty { runs.append(current); current = [] }
+                runs.append([child])
+            }
+        }
+        if !current.isEmpty { runs.append(current) }
+        return runs
+    }
+
     private func rows(_ index: Int) -> [Int] {
         tree.children[index].flatMap {
             tree.nodes[$0].tag == "tr" ? [$0] : rows($0)
@@ -366,6 +399,7 @@ private struct NativeInlineText: NSViewRepresentable {
     let dark: Bool
     var highlighted: NSAttributedString?
     var wraps = true
+    var runs: [Int]?
     @Environment(\.openURL) private var openURL
 
     func makeNSView(context: Context) -> NativeInlineTextView {
@@ -408,7 +442,16 @@ private struct NativeInlineText: NSViewRepresentable {
             }
             attributes[.paragraphStyle] = paragraph
         }
-        let text = highlighted ?? attributed(index, attributes: attributes)
+        let text: NSAttributedString
+        if let highlighted {
+            text = highlighted
+        } else if let runs {
+            let joined = NSMutableAttributedString()
+            for child in runs { joined.append(attributed(child, attributes: attributes)) }
+            text = joined
+        } else {
+            text = attributed(index, attributes: attributes)
+        }
         if view.attributedString() != text { view.textStorage?.setAttributedString(text) }
         view.activateLink = { openURL($0) }
         let sourceMap = tree.sourceMaps[index]
