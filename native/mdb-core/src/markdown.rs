@@ -159,7 +159,7 @@ pub fn parse_markdown(text: String) -> Vec<MarkdownNode> {
                 record.detail = symbol.to_string();
                 MarkdownKind::Task
             }
-            NodeValue::ThematicBreak => MarkdownKind::Rule,
+            NodeValue::ThematicBreak(_) => MarkdownKind::Rule,
             NodeValue::CodeBlock(code) => {
                 record.text = code.literal.clone();
                 record.detail = code.info.clone();
@@ -175,9 +175,9 @@ pub fn parse_markdown(text: String) -> Vec<MarkdownNode> {
             }
             NodeValue::SoftBreak => MarkdownKind::SoftBreak,
             NodeValue::LineBreak => MarkdownKind::LineBreak,
-            NodeValue::Emph => MarkdownKind::Emphasis,
-            NodeValue::Strong => MarkdownKind::Strong,
-            NodeValue::Strikethrough => MarkdownKind::Strike,
+            NodeValue::Emph(_) => MarkdownKind::Emphasis,
+            NodeValue::Strong(_) => MarkdownKind::Strong,
+            NodeValue::Strikethrough(_) => MarkdownKind::Strike,
             NodeValue::Link(link) | NodeValue::Image(link) => {
                 record.destination = link.url.clone();
                 record.detail = link.title.clone();
@@ -188,8 +188,8 @@ pub fn parse_markdown(text: String) -> Vec<MarkdownNode> {
                 }
             }
             NodeValue::Table(_) => MarkdownKind::Table,
-            NodeValue::TableRow(header) => {
-                record.level = u32::from(*header);
+            NodeValue::TableRow(row) => {
+                record.level = u32::from(row.header);
                 MarkdownKind::TableRow
             }
             NodeValue::TableCell => MarkdownKind::TableCell,
