@@ -12,6 +12,8 @@ nonisolated struct NativeRenderTree: Sendable {
     let children: [[Int]]
     let source: String
     let sourceMaps: [Int: NativeRenderedSourceMap]
+    /// Source maps for the inline runs of tight list items, keyed by each run's first child.
+    let runSourceMaps: [Int: NativeRenderedSourceMap]
     let sourceRanges: [Int: NSRange]
     let failure: String?
 
@@ -100,9 +102,83 @@ nonisolated struct NativeRenderTree: Sendable {
                 }
             }
         }
+        // A tight `li` holds its inline nodes directly, so it has no paragraph record to map.
+        // Map each displayed inline run through the item's own parser paragraphs instead.
+        var runSourceMaps: [Int: NativeRenderedSourceMap] = [:]
+        for (index, node) in records.enumerated() where node.tag == "li" {
+            guard let start = node.attributes["source-start"].flatMap(UInt32.init),
+                  let item = byStart[start]?.first(where: { [.item, .task].contains(structure[$0].kind) })
+            else { continue }
+            let paragraphs = sourceChildren[item].filter { structure[$0].kind == .paragraph }
+            let runs = Self.inlineRuns(index, nodes: records, children: children).filter {
+                Self.isDisplayedInlineRun($0, nodes: records, children: children)
+            }
+            guard runs.count == paragraphs.count else { continue }
+            for (run, paragraph) in zip(runs, paragraphs) {
+                guard let map = NativeRenderedSourceMap.make(
+                    index: paragraph, nodes: structure, children: sourceChildren, source: sourceText),
+                      !map.text.isEmpty, let first = map.offsets.first, let last = map.offsets.last else { continue }
+                // The renderer keeps whitespace around the paragraph (after a task marker, before a nested list).
+                let isText: (Int) -> Bool = { records[$0].tag == "#text" }
+                let leading = String(run.prefix(while: isText).map { records[$0].text }.joined()
+                    .prefix(while: \.isWhitespace))
+                let trailing = String(run.reversed().prefix(while: isText).reversed().map { records[$0].text }.joined()
+                    .reversed().prefix(while: \.isWhitespace).reversed())
+                runSourceMaps[run[0]] = NativeRenderedSourceMap(
+                    text: leading + map.text + trailing,
+                    offsets: Array(repeating: first, count: leading.utf16.count) + map.offsets
+                        + Array(repeating: last, count: trailing.utf16.count))
+            }
+        }
         self.sourceMaps = sourceMaps
+        self.runSourceMaps = runSourceMaps
         self.sourceRanges = sourceRanges
     }
+
+    private static let inlineTags: Set<String> = ["#text", "code", "a", "strong", "em", "del", "b", "i", "s", "strike",
+        "kbd", "sup", "sub", "br", "span", "mark", "u"]
+
+    private static func containsMedia(_ index: Int, nodes: [RenderNode], children: [[Int]]) -> Bool {
+        var stack = children[index]
+        while let child = stack.popLast() {
+            if ["img", "video"].contains(nodes[child].tag) { return true }
+            stack.append(contentsOf: children[child])
+        }
+        return false
+    }
+
+    private static func isInline(_ index: Int, nodes: [RenderNode], children: [[Int]]) -> Bool {
+        inlineTags.contains(nodes[index].tag) && !containsMedia(index, nodes: nodes, children: children)
+    }
+
+    /// Groups consecutive inline children into runs; every block child is its own run.
+    private static func inlineRuns(_ index: Int, nodes: [RenderNode], children: [[Int]]) -> [[Int]] {
+        var runs: [[Int]] = []
+        var current: [Int] = []
+        for child in children[index] {
+            if isInline(child, nodes: nodes, children: children) {
+                current.append(child)
+            } else {
+                if !current.isEmpty { runs.append(current); current = [] }
+                runs.append([child])
+            }
+        }
+        if !current.isEmpty { runs.append(current) }
+        return runs
+    }
+
+    /// A run that renders as one inline text view: inline children with something other than whitespace.
+    private static func isDisplayedInlineRun(_ run: [Int], nodes: [RenderNode], children: [[Int]]) -> Bool {
+        let inline = run.count > 1 || run.first.map { isInline($0, nodes: nodes, children: children) } == true
+        return inline && run.contains {
+            !nodes[$0].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || nodes[$0].tag != "#text"
+        }
+    }
+
+    func containsMedia(_ index: Int) -> Bool { Self.containsMedia(index, nodes: nodes, children: children) }
+    func isInline(_ index: Int) -> Bool { Self.isInline(index, nodes: nodes, children: children) }
+    func inlineRuns(_ index: Int) -> [[Int]] { Self.inlineRuns(index, nodes: nodes, children: children) }
+    func isDisplayedInlineRun(_ run: [Int]) -> Bool { Self.isDisplayedInlineRun(run, nodes: nodes, children: children) }
 
     func text(_ index: Int) -> String {
         var output = ""
@@ -314,10 +390,10 @@ struct NativePreviewBlock: View {
             }.padding(.leading, 8)
         case "li":
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(inlineRuns(index).enumerated()), id: \.offset) { _, run in
-                    if run.count == 1, !isInline(run[0]) {
+                ForEach(Array(tree.inlineRuns(index).enumerated()), id: \.offset) { _, run in
+                    if run.count == 1, !tree.isInline(run[0]) {
                         NativePreviewBlock(tree: tree, index: run[0], model: model)
-                    } else if run.contains(where: { !tree.nodes[$0].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tree.nodes[$0].tag != "#text" }) {
+                    } else if tree.isDisplayedInlineRun(run) {
                         // Tight list items hold inline nodes directly; render each run as one text view.
                         NativeInlineText(tree: tree, index: index, model: model, dark: colorScheme == .dark, runs: run)
                             .textSelection(.disabled)
@@ -402,42 +478,13 @@ struct NativePreviewBlock: View {
         return min(max(start, -999_999_999), 999_999_999) + offset
     }
 
-    private func isInline(_ child: Int) -> Bool {
-        let inlineTags: Set<String> = ["#text", "code", "a", "strong", "em", "del", "b", "i", "s", "strike",
-            "kbd", "sup", "sub", "br", "span", "mark", "u"]
-        return inlineTags.contains(tree.nodes[child].tag) && !containsMedia(child)
-    }
-
-    /// Groups consecutive inline children into runs; every block child is its own run.
-    private func inlineRuns(_ index: Int) -> [[Int]] {
-        var runs: [[Int]] = []
-        var current: [Int] = []
-        for child in tree.children[index] {
-            if isInline(child) {
-                current.append(child)
-            } else {
-                if !current.isEmpty { runs.append(current); current = [] }
-                runs.append([child])
-            }
-        }
-        if !current.isEmpty { runs.append(current) }
-        return runs
-    }
-
     private func rows(_ index: Int) -> [Int] {
         tree.children[index].flatMap {
             tree.nodes[$0].tag == "tr" ? [$0] : rows($0)
         }
     }
 
-    private func containsMedia(_ index: Int) -> Bool {
-        var stack = tree.children[index]
-        while let child = stack.popLast() {
-            if ["img", "video"].contains(tree.nodes[child].tag) { return true }
-            stack.append(contentsOf: tree.children[child])
-        }
-        return false
-    }
+    private func containsMedia(_ index: Int) -> Bool { tree.containsMedia(index) }
 
     private func alignment(_ index: Int) -> Alignment {
         switch tree.nodes[index].attributes["align"] {
@@ -515,7 +562,7 @@ private struct NativeInlineText: NSViewRepresentable {
         }
         if view.attributedString() != text { view.textStorage?.setAttributedString(text) }
         view.activateLink = { openURL($0) }
-        let sourceMap = tree.sourceMaps[index]
+        let sourceMap = runs.map { $0.first.flatMap { tree.runSourceMaps[$0] } } ?? tree.sourceMaps[index]
         view.edit = { position, event in
             if let sourceMap, sourceMap.text == text.string, position < sourceMap.offsets.count {
                 model.editText(index, sourceMap.offsets[position], event)

@@ -949,6 +949,48 @@ import Testing
         #expect(host.textView.string == source)
     }
 
+    @Test func tightListItemClicksPlaceTheCaretInsideTheClickedItem() async throws {
+        let items = (0..<30).map { "- item \($0)" }.joined(separator: "\n")
+        let source = "# Heading\n\n- [ ] **bold** task 😀\n  - nested child\n\(items)\n\nlast\n"
+        let raw = source as NSString
+        let tree = NativeMarkdown(source).rendered
+        let runs = tree.nodes.indices.filter { tree.nodes[$0].tag == "li" }
+            .flatMap { tree.inlineRuns($0).filter(tree.isDisplayedInlineRun) }
+        #expect(runs.count == 32)
+        for run in runs {
+            let map = try #require(tree.runSourceMaps[run[0]])
+            #expect(map.text == run.map(tree.text).joined())
+            #expect(map.offsets.count == (map.text as NSString).length + 1)
+        }
+        let lastItem = try #require(runs.last.flatMap { tree.runSourceMaps[$0[0]] })
+        #expect(lastItem.text == "item 29")
+        #expect(lastItem.offsets[0] == raw.range(of: "item 29").location)
+
+        let (document, url) = try makeDocument(source)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let host = NativeEditorHost()
+        host.load(document, rootURL: nil, anchor: nil)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host.scrollView
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        for (renderedText, word) in [("bold task", "task"), ("nested child", "child"), ("item 9", "item 9")] {
+            host.textView.setSelectedRange(NSRange(location: 2, length: 0))
+            host.scrollView.layoutSubtreeIfNeeded()
+            host.livePreview.updateViewport()
+            try await Task.sleep(for: .milliseconds(200))
+            host.scrollView.layoutSubtreeIfNeeded()
+            let view = try #require(inlineView(in: host.textView, containing: renderedText))
+            let position = (view.string as NSString).range(of: word).location + 2
+            try postClick(in: window, at: clickPoint(in: view, at: position))
+            try await Task.sleep(for: .milliseconds(150))
+            #expect(host.textView.selectedRange() == NSRange(location: raw.range(of: word).location + 2, length: 0))
+            #expect(host.preview.notice == nil)
+        }
+        #expect(host.textView.string == source)
+    }
+
     @Test func renderedFencedCodeHasTokenColorsInBothThemes() async throws {
         let source = "# Active\r\n\r\n```swift\r\nstruct Greeting {\r\n    let name: String = \"😀\"\r\n}\r\n```\r\n\r\n"
             + "```typescript\r\nconst count: number = 42; // counter\r\n```\r\n"
