@@ -43,6 +43,13 @@ import Testing
         #expect(data == Data("😀".utf8))
     }
 
+    @Test func latin1UpgradeRewritesUntouchedNonASCIIBytes() {
+        let (data, encoding) = TextCodec.encode("café →", as: .latin1)
+        #expect(encoding == .utf8(bom: false))
+        #expect(data == Data("café →".utf8))
+        #expect(data.contains(0xC3) && !data.contains(0xE9))
+    }
+
     @Test(arguments: [("a\nb\n", "\n"), ("a\r\nb\r\n", "\r\n"), ("a\rb\r", "\r"), ("none", "\n"), ("a\r\nb\nc\n", "\n")])
     func detectsDominantLineSeparator(text: String, expected: String) {
         #expect(TextCodec.lineSeparator(of: text) == expected)
