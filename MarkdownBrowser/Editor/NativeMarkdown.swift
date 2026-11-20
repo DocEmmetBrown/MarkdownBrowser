@@ -112,15 +112,6 @@ nonisolated struct NativeRenderedSourceMap: Sendable {
         // Align only within a parser leaf, never by searching the document for repeated rendered text.
         let original = Array(raw)
         let rendered = Array(text)
-        let changes = rendered.difference(from: original)
-        var removed = Set<Int>()
-        var inserted = Set<Int>()
-        for change in changes {
-            switch change {
-            case .remove(let offset, _, _): removed.insert(offset)
-            case .insert(let offset, _, _): inserted.insert(offset)
-            }
-        }
         var starts = [range.location]
         var sourceOffset = range.location
         for character in original {
@@ -128,15 +119,46 @@ nonisolated struct NativeRenderedSourceMap: Sendable {
             starts.append(sourceOffset)
         }
         var positions = Array(repeating: range.location, count: rendered.count + 1)
-        var originals = original.indices.filter { !removed.contains($0) }.makeIterator()
         var previous = range.location
-        for index in rendered.indices {
-            if !inserted.contains(index), let originalIndex = originals.next() {
-                positions[index] = starts[originalIndex]
-                previous = starts[originalIndex + 1]
-            } else {
-                positions[index] = previous
+        // A diff costs the leaf's length times its number of changes, which is quadratic for a long line full of
+        // entities. Longer leaves are diffed a window at a time, keeping only the first half of each window so the
+        // cut never decides an alignment. A leaf that fits in one window is diffed whole.
+        let window = 128
+        var renderedIndex = 0
+        var originalIndex = 0
+        while renderedIndex < rendered.count {
+            let renderedPart = rendered[renderedIndex..<min(rendered.count, renderedIndex + window)]
+            let originalPart = original[originalIndex..<min(original.count, originalIndex + window)]
+            if originalPart.isEmpty {
+                for index in renderedIndex..<rendered.count { positions[index] = previous }
+                break
             }
+            let isLast = renderedPart.endIndex == rendered.count && originalPart.endIndex == original.count
+            var removed = Set<Int>()
+            var inserted = Set<Int>()
+            for change in renderedPart.difference(from: originalPart) {
+                switch change {
+                case .remove(let offset, _, _): removed.insert(offset)
+                case .insert(let offset, _, _): inserted.insert(offset)
+                }
+            }
+            var renderedOffset = 0
+            var originalOffset = 0
+            while renderedOffset < renderedPart.count {
+                if !isLast, renderedOffset + originalOffset > 0,
+                   renderedOffset >= renderedPart.count / 2 || originalOffset >= originalPart.count / 2 { break }
+                while removed.contains(originalOffset) { originalOffset += 1 }
+                if !inserted.contains(renderedOffset), originalOffset < originalPart.count {
+                    positions[renderedIndex + renderedOffset] = starts[originalIndex + originalOffset]
+                    previous = starts[originalIndex + originalOffset + 1]
+                    originalOffset += 1
+                } else {
+                    positions[renderedIndex + renderedOffset] = previous
+                }
+                renderedOffset += 1
+            }
+            renderedIndex += renderedOffset
+            originalIndex += originalOffset
         }
         positions[rendered.count] = NSMaxRange(range)
         var offsets: [Int] = []

@@ -102,8 +102,8 @@ There is one editing pane. Clicking rendered prose, code or table text maps the 
 The bridge exchanges copied text/bytes, records and search handles rather than
 live AppKit objects. Source maps use UTF-16 offsets to match `NSTextView`.
 Build tools fetch dependencies as needed; document processing does not call a
-remote rendering service. Explicit HTTP(S) image/video URLs can still load
-network media.
+remote rendering service. Explicit HTTP(S) image/video URLs load network media
+only when "Load remote images and video" is on in Settings (off by default).
 
 ## Trust and execution boundaries
 
