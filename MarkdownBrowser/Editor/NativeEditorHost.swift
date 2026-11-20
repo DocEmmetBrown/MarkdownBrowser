@@ -57,6 +57,10 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
     private var styles: [NativeMarkdownStyle] = []
     private var pendingMarkdownStyle = false
     private var editedStyleRange: NSRange?
+    private var editedStyleDelta = 0
+    private var styledLength = 0
+    /// Ranges the last markdown application reset and re-styled; read by tests.
+    private(set) var restyledRanges: [NSRange] = []
     private var codeTask: Task<Void, Never>?
     private var isDark = false
     private var loadsRemoteMedia = AppSettings.loadRemoteMedia
@@ -290,6 +294,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
             changed = NSUnionRange(changed, previous)
         }
         editedStyleRange = changed
+        editedStyleDelta += delta
         return true
     }
 
@@ -390,6 +395,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
                 resetMarkdown()
             } else {
                 editedStyleRange = nil
+                editedStyleDelta = 0
             }
             return
         }
@@ -418,18 +424,25 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
             return style.attributes.isEmpty || NSMaxRange(style.range) > storage.length ? nil : style
         }
         let fullRange = NSRange(location: 0, length: storage.length)
-        let oldStyles = styles
+        let edited = editedStyleRange
+        // Shift old styles past the edit only if the tracked edit accounts for the whole length change since they
+        // were applied; otherwise compare them unshifted, which restyles everything that moved.
+        let tracked = edited.flatMap { range in
+            styledLength + editedStyleDelta == storage.length && range.length >= editedStyleDelta
+                && NSMaxRange(range) <= storage.length ? range : nil
+        }
+        var ranges = NativeMarkdownStyle.changedRanges(
+            from: styles, to: newStyles, edited: tracked, delta: tracked == nil ? 0 : editedStyleDelta
+        ).map { NSIntersectionRange($0, fullRange) }
         styles = newStyles
-        let oldKeys = Set(oldStyles.map(\.key))
-        let newKeys = Set(newStyles.map(\.key))
-        var ranges = (oldStyles.filter { !newKeys.contains($0.key) } + newStyles.filter { !oldKeys.contains($0.key) })
-            .map { NSIntersectionRange($0.range, fullRange) }
-        if let edited = editedStyleRange {
+        styledLength = storage.length
+        if let edited {
             let start = max(0, edited.location - 1)
             let end = min(storage.length, NSMaxRange(edited) + 1)
             if end > start { ranges.append(NSRange(location: start, length: end - start)) }
         }
         editedStyleRange = nil
+        editedStyleDelta = 0
         ranges = ranges.filter { $0.length > 0 }.sorted { $0.location < $1.location }
         var changed: [NSRange] = []
         for range in ranges {
@@ -439,6 +452,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
                 changed.append(range)
             }
         }
+        restyledRanges = changed
         guard !changed.isEmpty else { return }
         isLoading = true
         storage.beginEditing()
@@ -479,6 +493,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
         styles = []
         pendingMarkdownStyle = false
         editedStyleRange = nil
+        editedStyleDelta = 0
         textView.textStorage?.setAttributes([
             .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
             .foregroundColor: NSColor.textColor,

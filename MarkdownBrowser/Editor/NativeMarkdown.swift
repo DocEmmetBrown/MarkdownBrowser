@@ -174,11 +174,38 @@ nonisolated struct NativeRenderedSourceMap: Sendable {
     }
 }
 
-struct NativeMarkdownStyle: Equatable {
+struct NativeMarkdownStyle: Hashable {
     let range: NSRange
     let kind: MarkdownKind
     let level: UInt32
-    var key: String { "\(range.location):\(range.length):\(kind):\(level)" }
+
+    /// Ranges whose attributes differ between `old` and `new` styling, in the offsets of `new`.
+    /// `edited` is the text replaced since `old` was applied (in current offsets) and `delta` its length change:
+    /// old styles after it are compared at their shifted offsets, so an edit only invalidates what it touched.
+    static func changedRanges(
+        from old: [NativeMarkdownStyle], to new: [NativeMarkdownStyle], edited: NSRange?, delta: Int
+    ) -> [NSRange] {
+        var ranges: [NSRange] = []
+        var moved = old
+        if let edited {
+            let oldEnd = NSMaxRange(edited) - delta
+            moved = old.compactMap { style in
+                if NSMaxRange(style.range) <= edited.location { return style }
+                if style.range.location >= oldEnd {
+                    let range = NSRange(location: style.range.location + delta, length: style.range.length)
+                    return NativeMarkdownStyle(range: range, kind: style.kind, level: style.level)
+                }
+                // The edit cut into this style: its attributes now sit on whatever text surrounds the edit.
+                let start = min(style.range.location, edited.location)
+                let end = max(NSMaxRange(style.range) + delta, NSMaxRange(edited))
+                ranges.append(NSRange(location: start, length: end - start))
+                return nil
+            }
+        }
+        let before = Set(moved)
+        let after = Set(new)
+        return ranges + (moved.filter { !after.contains($0) } + new.filter { !before.contains($0) }).map(\.range)
+    }
 
     var attributes: [NSAttributedString.Key: Any] {
         switch kind {
