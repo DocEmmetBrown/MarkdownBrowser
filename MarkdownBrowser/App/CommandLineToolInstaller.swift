@@ -9,8 +9,27 @@ enum CommandLineToolInstaller {
         case occupied
     }
 
+    /// The launcher inside the app bundle, at the app's real location rather than a Gatekeeper translocation mount.
     static var bundledTool: URL? {
-        Bundle.main.sharedSupportURL?.appendingPathComponent("bin/\(toolName)")
+        tool(inBundleAt: originalBundleURL(Bundle.main.bundleURL))
+    }
+
+    nonisolated static func tool(inBundleAt bundle: URL) -> URL {
+        bundle.appendingPathComponent("Contents/SharedSupport/bin/\(toolName)")
+    }
+
+    nonisolated static func isTranslocated(_ url: URL) -> Bool {
+        url.path.contains("/AppTranslocation/")
+    }
+
+    /// An app launched from a quarantined spot (Downloads, a disk image) runs from a random read-only mount that
+    /// disappears on relaunch, so a link into it would break. Ask the system for the real location.
+    private static func originalBundleURL(_ url: URL) -> URL {
+        guard isTranslocated(url) else { return url }
+        typealias Resolve = @convention(c) (CFURL, UnsafeMutablePointer<Bool>?, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> Unmanaged<CFURL>?
+        guard let handle = dlopen(nil, RTLD_NOW), let symbol = dlsym(handle, "SecTranslocateCreateOriginalPathForURL") else { return url }
+        let resolve = unsafeBitCast(symbol, to: Resolve.self)
+        return resolve(url as CFURL, nil, nil)?.takeRetainedValue() as URL? ?? url
     }
 
     /// Asks once, on the first launch, whether to install the command.
@@ -31,6 +50,12 @@ enum CommandLineToolInstaller {
     static func install() {
         guard let tool = bundledTool, FileManager.default.fileExists(atPath: tool.path) else {
             showAlert("The mdb command is missing from this copy of MarkdownBrowser.", detail: "Reinstall the app and try again.")
+            return
+        }
+        guard !isTranslocated(tool) else {
+            showAlert(
+                "Move MarkdownBrowser to your Applications folder first.",
+                detail: "macOS is running it from a temporary location. Move it to Applications, reopen it, then install the mdb command.")
             return
         }
 
