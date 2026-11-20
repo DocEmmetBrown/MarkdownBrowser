@@ -1,6 +1,7 @@
 import AVKit
 import Quartz
 import SwiftUI
+import os
 
 struct ImageViewer: View {
     let url: URL
@@ -27,9 +28,21 @@ struct ImageViewer: View {
             }
         }
         .task(id: url) {
-            let loaded = NSImage(contentsOf: url)
-            image = loaded
-            failed = loaded == nil || loaded?.size == .zero
+            image = nil
+            failed = false
+            do {
+                let loaded = try await NativePreviewModel.boundedImage(url)
+                guard !Task.isCancelled else { return }
+                image = loaded
+            } catch is CancellationError {
+                return
+            } catch {
+                // Over a preview bound, zero-sized or undecodable: Quick Look renders it out of process.
+                guard !Task.isCancelled else { return }
+                failed = true
+                Logger(subsystem: "MarkdownBrowser", category: "Viewers")
+                    .notice("Image viewer fell back to Quick Look: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
@@ -48,15 +61,19 @@ struct VideoViewer: NSViewRepresentable {
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.controlsStyle = .floating
-        view.player = AVPlayer(url: url)
+        view.player = Self.player(for: url)
         return view
     }
 
     func updateNSView(_ view: AVPlayerView, context: Context) {
         if (view.player?.currentItem?.asset as? AVURLAsset)?.url != url {
             view.player?.pause()
-            view.player = AVPlayer(url: url)
+            view.player = Self.player(for: url)
         }
+    }
+
+    static func player(for url: URL) -> AVPlayer {
+        AVPlayer(playerItem: AVPlayerItem(asset: NativePreviewModel.restrictedAsset(url)))
     }
 
     static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {

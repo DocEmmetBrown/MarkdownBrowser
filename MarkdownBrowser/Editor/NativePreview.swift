@@ -160,14 +160,45 @@ final class NativePreviewModel {
         return canonical
     }
 
+    /// Image bounds shared by the preview and the standalone viewers: encoded bytes and decoded pixels.
+    nonisolated static let imageByteLimit = 16_000_000
+    nonisolated static let imagePixelLimit = 40_000_000.0
+
+    /// Loads and decodes `url` off the main actor, enforcing both image bounds before decoding.
+    nonisolated static func boundedImage(_ url: URL) async throws -> NSImage {
+        let data = try await imageData(url)
+        try Task.checkCancellation()
+        return try await Task.detached {
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                  let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+                  let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+                  width.doubleValue > 0, height.doubleValue > 0,
+                  width.doubleValue * height.doubleValue <= imagePixelLimit,
+                  let decoded = NSImage(data: data),
+                  decoded.size.width > 0, decoded.size.height > 0 else {
+                throw PreviewError.resource("Unsupported image or image dimensions.")
+            }
+            return decoded
+        }.value
+    }
+
+    /// An asset that cannot follow references to other files or hosts.
+    nonisolated static func restrictedAsset(_ url: URL) -> AVURLAsset {
+        AVURLAsset(url: url, options: [
+            AVURLAssetReferenceRestrictionsKey: AVAssetReferenceRestrictions.forbidAll.rawValue,
+        ])
+    }
+
     nonisolated static func imageData(_ url: URL) async throws -> Data {
-        let limit = 16_000_000
+        let limit = imageByteLimit
+        let tooLarge = PreviewError.resource("Image exceeds the \(limit / 1_000_000) MB limit.")
         let data: Data
         if url.isFileURL {
             data = try await Task.detached {
                 let values = try url.resourceValues(forKeys: [.fileSizeKey])
                 guard (values.fileSize ?? limit + 1) <= limit else {
-                    throw PreviewError.resource("Image exceeds the 16 MB limit.")
+                    throw tooLarge
                 }
                 return try Data(contentsOf: url)
             }.value
@@ -179,12 +210,12 @@ final class NativePreviewModel {
             }
             var received = Data()
             for try await byte in bytes {
-                guard received.count < limit else { throw PreviewError.resource("Image exceeds the 16 MB limit.") }
+                guard received.count < limit else { throw tooLarge }
                 received.append(byte)
             }
             data = received
         }
-        guard data.count <= limit else { throw PreviewError.resource("Image exceeds the 16 MB limit.") }
+        guard data.count <= limit else { throw tooLarge }
         if ["svg", "svgz"].contains(url.pathExtension.lowercased()) || data.range(of: Data("<svg".utf8)) != nil {
             return try await Task.detached { try rasterizeSvg(source: data) }.value
         }
@@ -630,16 +661,8 @@ private struct NativeImageView: View {
             failure = nil
             do {
                 let url = try model.resourceURL(href)
-                let data = try await NativePreviewModel.imageData(url)
+                let decoded = try await NativePreviewModel.boundedImage(url)
                 guard !Task.isCancelled else { return }
-                guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
-                      let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
-                      let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
-                      let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
-                      width.doubleValue * height.doubleValue <= 40_000_000,
-                      let decoded = NSImage(data: data) else {
-                    throw PreviewError.resource("Unsupported image or image dimensions.")
-                }
                 image = decoded
             } catch is CancellationError {
                 return
@@ -673,9 +696,7 @@ private struct NativeVideoView: View {
             failure = nil
             do {
                 let url = try model.resourceURL(href)
-                let asset = AVURLAsset(url: url, options: [
-                    AVURLAssetReferenceRestrictionsKey: AVAssetReferenceRestrictions.forbidAll.rawValue,
-                ])
+                let asset = NativePreviewModel.restrictedAsset(url)
                 guard try await asset.load(.isPlayable) else {
                     throw PreviewError.resource("This video cannot be played.")
                 }
