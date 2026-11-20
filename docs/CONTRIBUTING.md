@@ -1,6 +1,17 @@
 # Contributing
 
+Bug reports, fixes and focused features are welcome. This is a small project reviewed by one person in their spare time, so please read this before opening a pull request.
+
 By contributing, you agree to license your contributions under the [MIT License](../LICENSE).
+
+## Pull requests
+
+- **Discuss first.** For anything larger than a small bug fix, open an issue describing the problem and your intended approach before writing code. Unannounced large PRs may be closed.
+- **One change per PR.** Don't bundle a fix with refactoring, reformatting, renames or dependency updates.
+- **You are the author.** You may use AI tools, but you must have read, built and run everything you submit, and be able to explain any line of it. PRs that look like unreviewed generated output — speculative refactors, invented APIs, comments that restate the code, tests that assert nothing, descriptions that don't match the diff — will be closed without a detailed review.
+- **Show that it works.** Add regression tests for changed behavior, run the checks under [Validation](#validation), and state in the PR which manual checks you ran and on which macOS version. Screenshots help for visual changes.
+- **Follow the rules below.** In particular: never re-serialize Markdown, preserve bytes, keep undo and IME intact, and treat content as untrusted.
+- **Security issues:** don't open a public issue; use GitHub's private vulnerability reporting for this repository.
 
 ## Setup
 
@@ -108,5 +119,3 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 Locally run `scripts/build-release.sh 0.2.0` (`SKIP_TESTS=1` skips tests). Builds are ad-hoc signed unless `DEVELOPER_ID_APPLICATION` is set. Notarization also needs `NOTARY_PROFILE` or the three `NOTARY_KEY_*`/issuer settings documented in that script.
-
-Keep changes focused, add regression tests for changed behavior, and document which manual checks actually ran.
