@@ -2,9 +2,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use comrak::nodes::NodeValue;
 use scraper::{Html, Node};
-use syntect::{
-    easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
-};
+use syntect::{easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum RenderError {
@@ -395,6 +393,31 @@ pub struct CodeHighlight {
     pub blue: u8,
 }
 
+/// Splits after each `\r\n`, `\n` or lone `\r`, keeping the terminator on its line.
+fn lines_with_endings(text: &str) -> impl Iterator<Item = &str> {
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        if start == bytes.len() {
+            return None;
+        }
+        let mut end = start;
+        while end < bytes.len() && bytes[end] != b'\n' && bytes[end] != b'\r' {
+            end += 1;
+        }
+        if end < bytes.len() {
+            end += if bytes[end] == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+        }
+        let line = &text[start..end];
+        start = end;
+        Some(line)
+    })
+}
+
 #[uniffi::export]
 pub fn highlight_source(
     text: String,
@@ -412,9 +435,14 @@ pub fn highlight_source(
     let mut highlighter = HighlightLines::new(syntax, theme);
     let mut output = Vec::new();
     let mut offset = 0;
-    for line in LinesWithEndings::from(&text) {
+    for line in lines_with_endings(&text) {
+        // syntect only ends a line at `\n`; swapping a lone `\r` keeps the UTF-16 length.
+        let line = match line.strip_suffix('\r') {
+            Some(body) => format!("{body}\n"),
+            None => line.to_owned(),
+        };
         for (style, part) in highlighter
-            .highlight_line(line, &SYNTAXES)
+            .highlight_line(&line, &SYNTAXES)
             .map_err(failed)?
         {
             let length = part.encode_utf16().count() as u32;
@@ -609,6 +637,23 @@ mod tests {
                 .any(|pair| (pair[0].red, pair[0].green, pair[0].blue)
                     != (pair[1].red, pair[1].green, pair[1].blue))
         );
+    }
+
+    #[test]
+    fn bare_cr_line_endings_highlight_per_line() {
+        let lf = highlight_source("// c\nlet x = 1;\n".into(), "rs".into(), false).unwrap();
+        let cr = highlight_source("// c\rlet x = 1;\r".into(), "rs".into(), false).unwrap();
+        assert_eq!(
+            cr.iter().map(|span| span.length).sum::<u32>(),
+            "// c\rlet x = 1;\r".encode_utf16().count() as u32
+        );
+        let spans = |highlights: &[CodeHighlight]| {
+            highlights
+                .iter()
+                .map(|h| (h.start, h.length, h.red, h.green, h.blue))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(spans(&cr), spans(&lf));
     }
 
     #[test]
