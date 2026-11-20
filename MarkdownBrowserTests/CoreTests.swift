@@ -1,5 +1,7 @@
+import AVFoundation
 import AppKit
 import Foundation
+import ImageIO
 import Testing
 
 @testable import MarkdownBrowser
@@ -180,6 +182,66 @@ import Testing
     ])
     func classifies(name: String, expected: FileKind) {
         #expect(FileKind.of(URL(filePath: "/tmp/\(name)")) == expected)
+    }
+}
+
+@Suite struct MediaBoundsTests {
+    private func writePNG(width: Int, height: Int, to url: URL) throws {
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue))
+        let image = try #require(context.makeImage())
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+    }
+
+    private func temporaryFile(_ name: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appending(path: name)
+    }
+
+    @Test func loadsAnImageWithinBothBounds() async throws {
+        let url = try temporaryFile("small.png")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try writePNG(width: 8, height: 4, to: url)
+        let image = try await NativePreviewModel.boundedImage(url)
+        #expect(image.size == CGSize(width: 8, height: 4))
+    }
+
+    @Test func rejectsAnImageOverTheEncodedByteLimit() async throws {
+        let url = try temporaryFile("huge.tiff")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try Data().write(to: url)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(NativePreviewModel.imageByteLimit + 1))
+        try handle.close()
+        await #expect(throws: PreviewError.self) { try await NativePreviewModel.boundedImage(url) }
+    }
+
+    @Test func rejectsAnImageOverTheDecodedPixelLimit() async throws {
+        let url = try temporaryFile("wide.png")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let side = Int(NativePreviewModel.imagePixelLimit.squareRoot()) + 1
+        try writePNG(width: side, height: side, to: url)
+        let size = try #require(try url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        #expect(size <= NativePreviewModel.imageByteLimit)
+        await #expect(throws: PreviewError.self) { try await NativePreviewModel.boundedImage(url) }
+    }
+
+    @Test func rejectsUndecodableData() async throws {
+        let url = try temporaryFile("broken.png")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try Data("not an image".utf8).write(to: url)
+        await #expect(throws: PreviewError.self) { try await NativePreviewModel.boundedImage(url) }
+    }
+
+    @Test func standaloneVideoPlayerForbidsExternalReferences() throws {
+        let url = URL(filePath: "/tmp/clip.mov")
+        let asset = try #require(VideoViewer.player(for: url).currentItem?.asset as? AVURLAsset)
+        #expect(asset.url == url)
+        #expect(asset.referenceRestrictions == .forbidAll)
     }
 }
 
