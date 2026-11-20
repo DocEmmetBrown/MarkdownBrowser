@@ -34,7 +34,14 @@ jobs:
       - run: |
           if ! xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build \
             -resultBundlePath build/tests.xcresult -quiet test; then
-            xcrun xcresulttool get test-results summary --path build/tests.xcresult
+            summary="$(xcrun xcresulttool get test-results summary --path build/tests.xcresult)"
+            printf '%s\n' "$summary"
+            while IFS= read -r test_id; do
+              echo "Failure activities for $test_id"
+              xcrun xcresulttool get test-results activities \
+                --path build/tests.xcresult --test-id "$test_id" --compact |
+                jq '[.. | objects | select(has("title")) | {startTime,title}]'
+            done < <(printf '%s\n' "$summary" | jq -r '.testFailures[].testIdentifierString')
             exit 1
           fi
 
