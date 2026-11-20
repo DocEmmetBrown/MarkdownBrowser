@@ -18,7 +18,9 @@ pub struct SearchQuery {
 pub struct SearchMatch {
     /// 1-based line number.
     pub line: u32,
+    /// 0-based UTF-16 units from the start of the line.
     pub column: u32,
+    /// Length in UTF-16 units; a match spanning lines counts each line break as one.
     pub length: u32,
 }
 
@@ -62,8 +64,11 @@ impl Searcher {
 
     /// At most `limit` matches in `text` split on `line_separator`, as the editor splits it.
     pub fn find(&self, text: String, line_separator: String, limit: u32) -> Vec<SearchMatch> {
-        let doc = Doc::new(&text, &line_separator);
         let mut result = Vec::new();
+        if limit == 0 {
+            return result;
+        }
+        let doc = Doc::new(&text, separator_or_newline(&line_separator));
         self.matcher.each(&doc, |found| {
             let line = doc.line_at(found.from);
             result.push(SearchMatch {
@@ -79,7 +84,8 @@ impl Searcher {
     /// Replaces every match. In regex mode `template` expands `$&`, `$1`… and `$$`, and `\n`, `\r`, `\t`, `\\`;
     /// line breaks in the result become `line_separator`.
     pub fn replace(&self, text: String, line_separator: String, template: String) -> Replacement {
-        let doc = Doc::new(&text, &line_separator);
+        let line_separator = separator_or_newline(&line_separator);
+        let doc = Doc::new(&text, line_separator);
         let original: Vec<u16> = text.encode_utf16().collect();
         let separator_extra = line_separator.encode_utf16().count().max(1) - 1;
         let original_offset = |pos: usize| pos + doc.line_at(pos) * separator_extra;
@@ -95,7 +101,7 @@ impl Searcher {
             let insert = if line_separator == "\n" {
                 insert
             } else {
-                insert.replace('\n', &line_separator)
+                insert.replace('\n', line_separator)
             };
             let (from, to) = (original_offset(found.from), original_offset(found.to));
             output.extend_from_slice(&original[cursor..from]);
@@ -123,7 +129,8 @@ impl Searcher {
         column: u32,
         template: String,
     ) -> Option<String> {
-        let doc = Doc::new(&text, &line_separator);
+        let line_separator = separator_or_newline(&line_separator);
+        let doc = Doc::new(&text, line_separator);
         let line_index = line.checked_sub(1)? as usize;
         let from = *doc.line_starts.get(line_index)? + column as usize;
         if from > doc.line_end(line_index) {
@@ -154,7 +161,7 @@ impl Searcher {
         let replacement = if line_separator == "\n" {
             replacement
         } else {
-            replacement.replace('\n', &line_separator)
+            replacement.replace('\n', line_separator)
         };
 
         let mut output = Vec::with_capacity(original.len() + replacement.len());
@@ -162,6 +169,15 @@ impl Searcher {
         output.extend(replacement.encode_utf16());
         output.extend_from_slice(&original[end..]);
         Some(String::from_utf16_lossy(&output))
+    }
+}
+
+/// An empty separator means the editor's default, `\n`.
+fn separator_or_newline(line_separator: &str) -> &str {
+    if line_separator.is_empty() {
+        "\n"
+    } else {
+        line_separator
     }
 }
 
@@ -173,14 +189,9 @@ struct Doc {
 
 impl Doc {
     fn new(text: &str, line_separator: &str) -> Self {
-        let separator = if line_separator.is_empty() {
-            "\n"
-        } else {
-            line_separator
-        };
         let mut units = Vec::with_capacity(text.len());
         let mut line_starts = vec![0];
-        for (index, line) in text.split(separator).enumerate() {
+        for (index, line) in text.split(line_separator).enumerate() {
             if index > 0 {
                 units.push(NEWLINE);
                 line_starts.push(units.len());
@@ -588,6 +599,27 @@ mod tests {
             find(text, "\r\n", query("bar\\nbaz", true, true), 10),
             [4, 0, 7]
         );
+    }
+
+    #[test]
+    fn finds_nothing_with_a_zero_limit() {
+        assert!(find("a a", "\n", query("a", true, false), 0).is_empty());
+    }
+
+    #[test]
+    fn an_empty_separator_means_newline_when_replacing() {
+        assert_eq!(
+            replace("a\nb", "", query("a", true, false), "x\ny"),
+            ("x\ny\nb".into(), 1)
+        );
+        let single = Searcher::new(query("a", true, false)).replace_match(
+            "a\nb".into(),
+            String::new(),
+            1,
+            0,
+            "x\ny".into(),
+        );
+        assert_eq!(single.as_deref(), Some("x\ny\nb"));
     }
 
     #[test]

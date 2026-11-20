@@ -47,7 +47,14 @@ pub struct MarkdownNode {
     pub length: u32,
     pub text: String,
     pub destination: String,
+    /// A secondary string whose meaning depends on the kind: code block info string; link or image title;
+    /// footnote name; footnote reference anchor ID; alert title (or its type name);
+    /// for a task, the UTF-16 offset of its checkbox symbol. Empty for other kinds.
     pub detail: String,
+    /// A number whose meaning depends on the kind:
+    /// heading depth (1 to 6); ordered list start number (0 for a bullet list);
+    /// task checked (1) or not (0); table row is a header (1) or not (0);
+    /// math is display (1) or inline (0). Zero for other kinds.
     pub level: u32,
 }
 
@@ -296,6 +303,18 @@ fn github_slug(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_map_start_rejects_overflowing_and_out_of_range_positions() {
+        let map = SourceMap::new("ab\ncd");
+        assert_eq!(map.start("2:2-2:2"), Some(4));
+        let max = usize::MAX;
+        assert_eq!(map.start(&format!("2:{max}-2:{max}")), None);
+        assert_eq!(map.start(&format!("{max}:1-{max}:1")), None);
+        assert_eq!(map.start("0:1-0:1"), None);
+        assert_eq!(map.start("1:0-1:0"), None);
+        assert_eq!(map.start("3:1-3:1"), None);
+    }
 
     #[test]
     fn resolves_links_without_treating_code_as_links() {
