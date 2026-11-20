@@ -70,8 +70,9 @@ nonisolated struct NativeRenderTree: Sendable {
             guard let kind = kinds[node.tag],
                   let start = node.attributes["source-start"].flatMap(UInt32.init),
                   let original = byStart[start]?.first(where: { structure[$0].kind == kind }) else { continue }
-            sourceMaps[index] = NativeRenderedSourceMap.make(
-                index: original, nodes: structure, children: sourceChildren, source: sourceText)
+            guard let map = NativeRenderedSourceMap.make(
+                index: original, nodes: structure, children: sourceChildren, source: sourceText) else { continue }
+            sourceMaps[index] = map
             sourceRanges[index] = structure[original].range
         }
         let containers: Set<String> = ["html", "body", "div", "section", "article", "table", "thead",
