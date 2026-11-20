@@ -151,7 +151,7 @@ final class OpenDocument: Identifiable {
     private func apply(diskData data: Data) {
         let decoded = TextCodec.decode(data)
         diskHash = Self.hash(data)
-        content = DecodedText(text: decoded.text, encoding: decoded.encoding, lineSeparator: content.lineSeparator)
+        content = decoded
         diskState = .inSync
         isDirty = false
         unsavedText = nil
