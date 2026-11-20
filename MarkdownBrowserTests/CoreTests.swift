@@ -255,6 +255,52 @@ import Testing
     }
 }
 
+@Suite struct SvgSniffTests {
+    private static let embedded = Data(#"<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>"#.utf8)
+    /// A PNG signature and IHDR followed by a tEXt chunk whose payload is SVG markup.
+    private static let png =
+        Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13]) + Data("IHDR".utf8)
+        + Data(count: 17) + Data([0, 0, 0, UInt8(embedded.count + 8)]) + Data("tEXtComment\0".utf8) + embedded
+    private static let jpeg =
+        Data([0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x80]) + Data("http://ns.adobe.com/xap/1.0/\0".utf8) + embedded
+
+    @Test func acceptsPlainSvg() {
+        #expect(NativePreviewModel.isSvg(Self.embedded))
+        #expect(NativePreviewModel.isSvg(Data([0xEF, 0xBB, 0xBF]) + Data(" \r\n\t".utf8) + Self.embedded))
+    }
+
+    @Test func acceptsSvgAfterXmlPrologAndComment() {
+        let prolog = #"<?xml version="1.0" encoding="UTF-8"?>"# + "\n<!-- Generator: Adobe Illustrator -->\n"
+        #expect(NativePreviewModel.isSvg(Data(prolog.utf8) + Self.embedded))
+        #expect(NativePreviewModel.isSvg(Data("<!-- exported -->\n".utf8) + Self.embedded))
+        let doctype = #"<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">"#
+        #expect(NativePreviewModel.isSvg(Data(doctype.utf8) + Self.embedded))
+    }
+
+    @Test func rejectsRasterImagesEmbeddingSvgMarkup() {
+        #expect(!NativePreviewModel.isSvg(Self.png))
+        #expect(!NativePreviewModel.isSvg(Self.jpeg))
+        #expect(!NativePreviewModel.isSvg(Data("GIF89a".utf8) + Self.embedded))
+        #expect(!NativePreviewModel.isSvg(Data("RIFF".utf8) + Data(count: 4) + Data("WEBPVP8 ".utf8) + Self.embedded))
+    }
+
+    @Test func rejectsDataWithoutLeadingSvgMarkup() {
+        #expect(!NativePreviewModel.isSvg(Data()))
+        #expect(!NativePreviewModel.isSvg(Data("<html><body>".utf8) + Self.embedded))
+        #expect(!NativePreviewModel.isSvg(Data(#"<?xml version="1.0"?><plist version="1.0"/>"#.utf8)))
+        // The root element must appear within the sniffed prefix, not anywhere in the file.
+        let padding = Data("<!--".utf8) + Data(repeating: 0x20, count: 16_000) + Data("-->".utf8)
+        #expect(!NativePreviewModel.isSvg(padding + Self.embedded))
+    }
+
+    @Test func rasterFilesEmbeddingSvgMarkupAreNotRasterized() async throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).png")
+        try Self.png.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(try await NativePreviewModel.imageData(url) == Self.png)
+    }
+}
+
 @Suite struct FolderSearchTests {
     @Test func findsMatchesWithUTF16Columns() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
