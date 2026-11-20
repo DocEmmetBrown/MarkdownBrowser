@@ -61,7 +61,7 @@ struct SearchPanel: View {
                     .disabled(model.options.query.isEmpty)
                 Button("Replace All…") {
                     Task {
-                        await model.search()
+                        await model.runAndWait()
                         if model.hitCount > 0 { confirmingReplace = true }
                     }
                 }
