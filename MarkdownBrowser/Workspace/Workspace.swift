@@ -158,6 +158,7 @@ final class Workspace {
 
         if !canAccess(url) {
             guard let folder = await delegate?.workspace(self, requestAccessTo: url) else { return false }
+            guard !isClosed else { return false }
             grantAccess(to: folder)
             guard canAccess(url) else { return false }
         }
@@ -174,6 +175,7 @@ final class Workspace {
 
         if let current = document, current.isDirty {
             guard await delegate?.workspace(self, shouldLeave: current) ?? true else { return false }
+            guard !isClosed else { return false }
         }
 
         let kind = FileKind.of(url)
@@ -426,6 +428,7 @@ final class Workspace {
         }
         if !canAccess(folder) {
             guard let granted = await delegate?.workspace(self, requestAccessTo: folder) else { return false }
+            guard !isClosed else { return false }
             grantAccess(to: granted)
             guard canAccess(folder) else { return false }
         }
