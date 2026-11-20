@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Command-line launcher, shipped in MarkdownBrowser.app/Contents/SharedSupport/bin.
-# Install: ln -s "/Applications/MarkdownBrowser.app/Contents/SharedSupport/bin/mdb" /usr/local/bin/mdb
+# Install: sudo ln -sf "/Applications/MarkdownBrowser.app/Contents/SharedSupport/bin/mdb" /usr/local/bin/mdb
 
 set -euo pipefail
 
@@ -16,10 +16,15 @@ EOF
 }
 
 paths=()
+end_of_options=0
 for arg in "$@"; do
+  if (( end_of_options )); then
+    paths+=("$arg")
+    continue
+  fi
   case "$arg" in
     -h|--help) usage; exit 0 ;;
-    --) ;;
+    --) end_of_options=1 ;;
     -*) echo "mdb: unknown option: $arg" >&2; usage >&2; exit 2 ;;
     *) paths+=("$arg") ;;
   esac
