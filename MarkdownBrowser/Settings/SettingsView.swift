@@ -84,7 +84,7 @@ private struct AppearanceSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 Toggle("Limit text width, like GitHub", isOn: $limitPageWidth)
-                Text("Space around rendered Markdown. With the limit on, lines stop at 980 points and the page is centered.")
+                Text("Space around rendered Markdown. With the limit on and wrapping enabled, lines stop at 980 points and the page is centered.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
