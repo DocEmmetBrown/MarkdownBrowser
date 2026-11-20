@@ -25,10 +25,6 @@ nonisolated struct FuzzyMatcher: Sendable {
     /// Whether the query is a path (contains "/"), to be matched against whole paths rather than names.
     var isPathQuery: Bool { query.contains("/") }
 
-    func matches(_ candidate: String) -> Bool {
-        isSubsequence(candidate)
-    }
-
     /// How well `candidate` matches, or `nil` when it doesn't. Only comparable between candidates of one query.
     func score(_ candidate: String) -> Int? {
         guard isSubsequence(candidate) else { return nil }

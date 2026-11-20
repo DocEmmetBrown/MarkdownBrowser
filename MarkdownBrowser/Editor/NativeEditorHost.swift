@@ -390,14 +390,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
         }
         let currentRevision = revision
         parseTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(80))
-            } catch is CancellationError {
-                return
-            } catch {
-                assertionFailure("Markdown update delay failed: \(error)")
-                return
-            }
+            try? await Task.sleep(for: .milliseconds(80))
             guard !Task.isCancelled else { return }
             let parsed = await Task.detached(priority: .userInitiated) { NativeMarkdown(source) }.value
             guard let self, !Task.isCancelled, self.revision == currentRevision else { return }
@@ -631,10 +624,6 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
         textView.textContainerInset = NSSize(width: CGFloat(AppSettings.pageLayout.margins.points), height: 16)
         scrollView.hasHorizontalScroller = !AppSettings.wrapLongLines
         textView.isHorizontallyResizable = !AppSettings.wrapLongLines
-        textView.textContainer?.widthTracksTextView = AppSettings.wrapLongLines
-        textView.textContainer?.containerSize = NSSize(
-            width: AppSettings.wrapLongLines ? scrollView.contentSize.width : .greatestFiniteMagnitude,
-            height: .greatestFiniteMagnitude)
         scrollView.tile()
     }
 
