@@ -104,6 +104,7 @@ The link points into the app, so reinstall it if you move the app.
 - Raw HTML supports native text, lists, tables, links, images, video and disclosure groups; CSS, scripts and arbitrary browser layout are not supported. SVG images do not load external or embedded image references.
 - Code fences use their language tag, including Swift and TypeScript, through the extended native grammar set. Untagged or unsupported languages remain plain text; there is no automatic language detection.
 - Images are limited to 16 MB and 40 million decoded pixels; diagrams to 100 KB of source. Preview and source highlighting are disabled above 5 MB.
+- A file that is not valid UTF-8 is read as Latin-1 and saved back byte for byte, until it contains a character Latin-1 cannot represent (above U+00FF). From then on it is saved as UTF-8 (without BOM), which rewrites its other non-ASCII bytes.
 - Parsing is debounced and runs off the main thread after edits, but is not incremental. A visible 10k-line Debug fixture measured 46-65 ms through synchronous layout/drawing and 2.3-2.5 seconds through the debounced reparse; the 16 ms goal is not met. Live VoiceOver and physical IME testing remain manual checks; see [native architecture and validation](docs/native-architecture.md).
 
 ## Project layout
