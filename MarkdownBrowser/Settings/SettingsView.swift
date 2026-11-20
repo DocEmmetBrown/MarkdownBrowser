@@ -15,6 +15,7 @@ struct SettingsView: View {
 private struct GeneralSettingsView: View {
     @AppStorage(AppSettings.autosaveOnFocusLossKey) private var autosaveOnFocusLoss = true
     @AppStorage(AppSettings.wrapLongLinesKey) private var wrapLongLines = true
+    @AppStorage(AppSettings.loadRemoteMediaKey) private var loadRemoteMedia = false
 
     var body: some View {
         Form {
@@ -33,6 +34,13 @@ private struct GeneralSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Privacy") {
+                Toggle("Load remote images and video", isOn: $loadRemoteMedia)
+                Text("Fetches media that a document links to over the network. The site hosting it can see when you open the document, and from where. When off, only files on this Mac are shown.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section("Command Line") {
                 LabeledContent("mdb command") {

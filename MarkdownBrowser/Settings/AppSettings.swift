@@ -66,6 +66,7 @@ enum AppSettings {
     static let wrapLongLinesKey = "wrapLongLines"
     static let pageMarginsKey = "pageMargins"
     static let limitPageWidthKey = "limitPageWidth"
+    static let loadRemoteMediaKey = "loadRemoteMedia"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -74,6 +75,7 @@ enum AppSettings {
             wrapLongLinesKey: true,
             pageMarginsKey: PageMargins.none.rawValue,
             limitPageWidthKey: false,
+            loadRemoteMediaKey: false,
         ])
     }
 
@@ -90,6 +92,12 @@ enum AppSettings {
 
     static var autosaveOnFocusLoss: Bool {
         UserDefaults.standard.bool(forKey: autosaveOnFocusLossKey)
+    }
+
+    /// Whether previews fetch images and video over the network. Off by default: the request tells the host
+    /// who opened the document, and when.
+    static var loadRemoteMedia: Bool {
+        UserDefaults.standard.bool(forKey: loadRemoteMediaKey)
     }
 
     static var appearance: AppearanceMode {

@@ -138,6 +138,9 @@ final class NativePreviewModel {
             guard ["file", "http", "https"].contains(scheme) else {
                 throw PreviewError.resource("Unsupported resource scheme: \(scheme)")
             }
+            guard scheme == "file" || AppSettings.loadRemoteMedia else {
+                throw PreviewError.resource("Remote media is turned off in Settings.")
+            }
             url = absolute
         } else {
             let pathPart = href.prefix { $0 != "#" && $0 != "?" }
