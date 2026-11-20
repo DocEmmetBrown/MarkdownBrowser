@@ -17,7 +17,12 @@ jobs:
       - run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
           xcodebuild -version
-      - run: brew install xcodegen
+      # Pinned XcodeGen release, verified by checksum, instead of whatever brew currently ships.
+      - run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.48.0/xcodegen.zip
+          echo "620c9f0dc10849f94728ab5df52d225ebab8187439dd6fee1925e59e80dff892  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
       # Builds the native core (native/build.sh) with rustup's toolchain.
       - run: rustup toolchain install stable --profile minimal
       - run: scripts/build-release.sh "$GITHUB_REF_NAME"

@@ -24,7 +24,7 @@ xcodegen generate
 open MarkdownBrowser.xcodeproj
 ```
 
-The Xcode project is generated and ignored. Edit `project.yml`, not the project. Regenerate after adding, removing or renaming files. Xcode resolves the pinned SwiftMath package automatically.
+The Xcode project is generated and ignored. Edit `project.yml`, not the project. Regenerate after adding, removing or renaming files. Xcode resolves the pinned SwiftMath package automatically. CI installs a checksum-verified XcodeGen release rather than the current Homebrew formula.
 
 ## Architecture
 
