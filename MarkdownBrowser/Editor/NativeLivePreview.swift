@@ -46,15 +46,46 @@ nonisolated struct NativeLiveBlock: Equatable {
         let tree = markdown.rendered
         guard tree.failure == nil else { return [] }
         var byStart: [String: Int] = [:]
+        var byID: [String: Int] = [:]
+        var byTag: [String: [Int]] = [:]
         for index in tree.nodes.indices {
-            if let start = tree.nodes[index].attributes["source-start"], byStart[start] == nil {
-                byStart[start] = index
+            let node = tree.nodes[index]
+            if let start = node.attributes["source-start"], byStart[start] == nil { byStart[start] = index }
+            if let id = node.attributes["id"], byID[id] == nil { byID[id] = index }
+            byTag[node.tag, default: []].append(index)
+        }
+        /// Per tag, how many of its render nodes are already known to be consumed.
+        var nextByTag: [String: Int] = [:]
+        let roots = markdown.nodes.indices.filter { markdown.nodes[$0].parent == 0 }
+        // The HTML ranges, sorted and merged, so a binary search tells whether a location is inside one.
+        var htmlRanges: [NSRange] = []
+        for range in markdown.nodes.filter({ $0.kind == .html }).map(\.range).sorted(by: { $0.location < $1.location })
+            where range.length > 0 {
+            if let last = htmlRanges.last, range.location <= NSMaxRange(last) {
+                htmlRanges[htmlRanges.count - 1].length = max(NSMaxRange(last), NSMaxRange(range)) - last.location
+            } else {
+                htmlRanges.append(range)
             }
         }
-        let roots = markdown.nodes.indices.filter { markdown.nodes[$0].parent == 0 }
-        let htmlRanges = markdown.nodes.filter { $0.kind == .html }.map(\.range)
+        func isInHTML(_ location: Int) -> Bool {
+            var low = 0
+            var high = htmlRanges.count
+            while low < high {
+                let middle = (low + high) / 2
+                if htmlRanges[middle].location <= location { low = middle + 1 } else { high = middle }
+            }
+            return low > 0 && NSLocationInRange(location, htmlRanges[low - 1])
+        }
         let tags = /(?i)<(\/?)(details|div|section|article|table|blockquote|ul|ol|pre)\b[^>]*>/
+        let tagStart = /(?i)<\/?(details|div|section|article|table|blockquote|ul|ol|pre)\b/
+        /// The longest text `tagStart` can match ("</blockquote"), in UTF-16 units.
+        let tagStartLength = 12
         let firstTag = /(?i)<([a-z][a-z0-9]*)\b/
+        // A tag ends with ">", so none can match past the last one; searching no further keeps a scan from running
+        // to the end of a document that has none.
+        let lastClose = text.range(of: ">", options: .backwards).location
+        let searchEnd = lastClose == NSNotFound
+            ? source.startIndex : String.Index(utf16Offset: lastClose + 1, in: source)
         var consumed: Set<Int> = []
         var coveredUntil = 0
         var output: [NativeLiveBlock] = []
@@ -65,34 +96,49 @@ nonisolated struct NativeLiveBlock: Equatable {
             var range = node.range
             var renderIndex = byStart[String(node.start)]
             if node.kind == .html {
-                let raw = text.substring(from: range.location)
                 var stack: [String] = []
                 var started = false
-                for match in raw.matches(of: tags) {
-                    let location = range.location + raw[..<match.range.lowerBound].utf16.count
-                    guard htmlRanges.contains(where: { NSLocationInRange(location, $0) }) else { continue }
-                    let tag = String(match.output.2).lowercased()
-                    if match.output.1.isEmpty {
+                // Only a tag starting inside this node can open a block, so a node without one needs no scan. The
+                // window runs a tag's length past the node so a tag at its very end is still seen.
+                let window = NSRange(
+                    location: range.location, length: min(range.length + tagStartLength, text.length - range.location))
+                if text.substring(with: window).contains(tagStart) {
+                    var cursor = String.Index(utf16Offset: range.location, in: source)
+                    var offset = range.location
+                    while cursor < searchEnd, let match = source[cursor..<searchEnd].firstMatch(of: tags) {
+                        let location = offset + source.utf16.distance(from: cursor, to: match.range.lowerBound)
+                        let end = location + source.utf16.distance(from: match.range.lowerBound, to: match.range.upperBound)
+                        cursor = match.range.upperBound
+                        offset = end
+                        // Until a tag inside this node opens a block, later tags belong to other nodes.
                         if !started, location >= NSMaxRange(range) { break }
-                        started = true
-                        stack.append(tag)
-                    } else if let last = stack.lastIndex(of: tag) {
-                        stack.removeSubrange(last...)
-                    }
-                    if started, stack.isEmpty {
-                        range.length = max(range.length, raw[..<match.range.upperBound].utf16.count)
-                        break
+                        guard isInHTML(location) else { continue }
+                        let tag = String(match.output.2).lowercased()
+                        if match.output.1.isEmpty {
+                            started = true
+                            stack.append(tag)
+                        } else if let last = stack.lastIndex(of: tag) {
+                            stack.removeSubrange(last...)
+                        }
+                        if started, stack.isEmpty {
+                            range.length = max(range.length, end - range.location)
+                            break
+                        }
                     }
                 }
                 if started, !stack.isEmpty { range.length = text.length - range.location }
                 let fragment = text.substring(with: range)
                 if let tag = fragment.firstMatch(of: firstTag)?.output.1 {
-                    renderIndex = tree.nodes.indices.first {
-                        !consumed.contains($0) && tree.nodes[$0].tag == tag.lowercased()
-                    }
+                    // The first render node with this tag that no earlier block has taken.
+                    let name = tag.lowercased()
+                    let candidates = byTag[name] ?? []
+                    var next = nextByTag[name] ?? 0
+                    while next < candidates.count, consumed.contains(candidates[next]) { next += 1 }
+                    nextByTag[name] = next
+                    renderIndex = next < candidates.count ? candidates[next] : nil
                 }
             } else if node.kind == .footnote {
-                renderIndex = tree.nodes.indices.first { tree.nodes[$0].attributes["id"] == node.destination }
+                renderIndex = byID[node.destination]
             }
             guard let renderIndex else { continue }
             let line = text.lineRange(for: NSRange(location: range.location, length: 0))

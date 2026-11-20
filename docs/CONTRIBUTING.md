@@ -1,6 +1,17 @@
 # Contributing
 
+Bug reports, fixes and focused features are welcome. This is a small project reviewed by one person in their spare time, so please read this before opening a pull request.
+
 By contributing, you agree to license your contributions under the [MIT License](../LICENSE).
+
+## Pull requests
+
+- **Discuss first.** For anything larger than a small bug fix, open an issue describing the problem and your intended approach before writing code. Unannounced large PRs may be closed.
+- **One change per PR.** Don't bundle a fix with refactoring, reformatting, renames or dependency updates.
+- **You are the author.** You may use AI tools, but you must have read, built and run everything you submit, and be able to explain any line of it. PRs that look like unreviewed generated output — speculative refactors, invented APIs, comments that restate the code, tests that assert nothing, descriptions that don't match the diff — will be closed without a detailed review.
+- **Show that it works.** Add regression tests for changed behavior, run the checks under [Validation](#validation), and state in the PR which manual checks you ran and on which macOS version. Screenshots help for visual changes.
+- **Follow the rules below.** In particular: never re-serialize Markdown, preserve bytes, keep undo and IME intact, and treat content as untrusted.
+- **Security issues:** don't open a public issue; use GitHub's private vulnerability reporting for this repository.
 
 ## Setup
 
@@ -32,7 +43,7 @@ Rendered inline labels use read-only `NSTextView` instances for character-level 
 
 Rendered text positions map through parser leaves to original UTF-16 offsets, including hidden Markdown markers, Unicode, entities and code fences. Align transformed text only within its parser leaf, never by searching the document for a repeated label. Selection uses the source editor's word/paragraph boundaries and window event tracking. Keep the clicked row pinned across deferred native-view measurements; release the pin on edits, navigation or user scrolling. Glyph concealment changes must invalidate layout as well as glyphs.
 
-Raw HTML provenance is added to a rendering copy before sanitization. Generated attributes precede user attributes; never trust document-provided `data-sourcepos` or origin IDs. Exact HTML text spans retain original UTF-16 ranges, including CRLF and entities. When parser literals cannot be aligned with their original range, retain block-level editing rather than guess. The controller validates every mapped edit against its current enclosing block and applies pending source shifts.
+Raw HTML provenance is added to a rendering copy before sanitization. Provenance attributes carry a per-render random suffix and are the only `data-` attributes the sanitizer keeps besides `data-math-style`; never trust document-provided `data-sourcepos` or origin IDs. Exact HTML text spans retain original UTF-16 ranges, including CRLF and entities. When parser literals cannot be aligned with their original range, retain block-level editing rather than guess. The controller validates every mapped edit against its current enclosing block and applies pending source shifts.
 
 Keep line-fragment block lookup indexed, not a scan of all document blocks per line. Invalidate only changed glyph/layout ranges when measured heights change. Concealed source backgrounds must not paint behind rendered widgets; the nonisolated TextKit drawing hook reads a lock-protected concealment snapshot.
 
@@ -108,5 +119,3 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 Locally run `scripts/build-release.sh 0.2.0` (`SKIP_TESTS=1` skips tests). Builds are ad-hoc signed unless `DEVELOPER_ID_APPLICATION` is set. Notarization also needs `NOTARY_PROFILE` or the three `NOTARY_KEY_*`/issuer settings documented in that script.
-
-Keep changes focused, add regression tests for changed behavior, and document which manual checks actually ran.

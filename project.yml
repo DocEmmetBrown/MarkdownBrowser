@@ -25,7 +25,8 @@ settings:
 packages:
   SwiftMath:
     url: https://github.com/mgriebling/SwiftMath.git
-    exactVersion: 1.7.3
+    # 1.7.3, pinned by commit: a tag can be moved, and the generated project's Package.resolved isn't tracked.
+    revision: fa8244ed032f4a1ade4cb0571bf87d2f1a9fd2d7
 
 targets:
   MdbCore:

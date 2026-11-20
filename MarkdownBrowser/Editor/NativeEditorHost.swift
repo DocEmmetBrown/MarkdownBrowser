@@ -59,6 +59,7 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
     private var editedStyleRange: NSRange?
     private var codeTask: Task<Void, Never>?
     private var isDark = false
+    private var loadsRemoteMedia = AppSettings.loadRemoteMedia
 
     override init() {
         let storage = NSTextStorage()
@@ -623,6 +624,10 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
     }
 
     private func applySettings() {
+        if loadsRemoteMedia != AppSettings.loadRemoteMedia {
+            loadsRemoteMedia = AppSettings.loadRemoteMedia
+            refreshMedia()
+        }
         textView.textContainerInset = NSSize(width: CGFloat(AppSettings.pageLayout.margins.points), height: 16)
         scrollView.hasHorizontalScroller = !AppSettings.wrapLongLines
         textView.isHorizontallyResizable = !AppSettings.wrapLongLines

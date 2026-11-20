@@ -35,7 +35,15 @@ pub fn render_markdown(text: String) -> Result<Vec<RenderNode>, RenderError> {
     let map = crate::markdown::SourceMap::new(&text);
     let arena = comrak::Arena::new();
     let root = comrak::parse_document(&arena, &text, &options);
+    // Provenance travels in attributes whose names carry a value the document cannot know, and raw HTML is held
+    // back while Comrak's own position attributes are renamed. Nothing a document writes can then pose as either,
+    // however differently the annotator and the HTML parser read it.
+    let nonce = nonce();
+    let position_attribute = format!("data-mdb-position-{nonce}");
+    let origin_attribute = format!("data-mdb-origin-{nonce}");
+    let placeholder = format!("mdb-raw-{nonce}-");
     let mut origins = Vec::new();
+    let mut raw_html = Vec::new();
     for node in root.descendants() {
         let mut data = node.data.borrow_mut();
         let position = data.sourcepos;
@@ -47,10 +55,23 @@ pub fn render_markdown(text: String) -> Result<Vec<RenderNode>, RenderError> {
         let offsets = text
             .get(map.bytes(position))
             .and_then(|raw| html_offsets(raw, literal, map.range(position).0));
-        *literal = annotate_html(literal, offsets.as_deref(), &mut origins)?;
+        let annotated =
+            annotate_html(literal, offsets.as_deref(), &mut origins, &origin_attribute)?;
+        // The line ending stays in the tree, so Comrak formats around the placeholder as it would around the HTML.
+        let ending = literal[literal.trim_end_matches(['\r', '\n']).len()..].to_owned();
+        let (annotated, ending) = match annotated.strip_suffix(ending.as_str()) {
+            Some(body) => (body.to_owned(), ending),
+            None => (annotated, String::new()),
+        };
+        let original = literal[..literal.len() - ending.len()].to_owned();
+        *literal = format!("<{placeholder}{}>{ending}", raw_html.len());
+        raw_html.push((annotated, original));
     }
     let mut html = String::new();
     comrak::format_html(root, &options, &mut html).map_err(failed)?;
+    // Only Comrak's own tags are in the output so far, and it escapes quotes in everything a document supplies.
+    let html = html.replace(" data-sourcepos=\"", &format!(" {position_attribute}=\""));
+    let html = restore_raw_html(&html, &placeholder, &raw_html);
     let clean = ammonia::Builder::default()
         .add_tags(["details", "summary", "video", "source"])
         .add_tag_attributes("code", ["class"])
@@ -60,7 +81,12 @@ pub fn render_markdown(text: String) -> Result<Vec<RenderNode>, RenderError> {
         .add_tag_attributes("img", ["width", "height"])
         .add_tag_attributes("video", ["src", "controls", "poster"])
         .add_tag_attributes("source", ["src", "type"])
-        .add_generic_attributes(["id", "name", "data-sourcepos", "data-mdb-origin"])
+        .add_generic_attributes([
+            "id",
+            "name",
+            position_attribute.as_str(),
+            origin_attribute.as_str(),
+        ])
         .url_schemes(["http", "https", "mailto", "file"].into())
         .clean(&html)
         .to_string();
@@ -80,13 +106,13 @@ pub fn render_markdown(text: String) -> Result<Vec<RenderNode>, RenderError> {
                     .map(|(key, value)| (key.to_owned(), value.to_owned()))
                     .collect();
                 if let Some(start) = attributes
-                    .get("data-sourcepos")
-                    .and_then(|value| map.start(value))
+                    .remove(&position_attribute)
+                    .and_then(|value| map.start(&value))
                 {
                     attributes.insert("source-start".into(), start.to_string());
                 }
                 if let Some(origin) = attributes
-                    .remove("data-mdb-origin")
+                    .remove(&origin_attribute)
                     .and_then(|value| value.parse::<usize>().ok())
                     .and_then(|index| origins.get(index))
                     .and_then(Option::as_ref)
@@ -132,6 +158,61 @@ struct HtmlOrigin {
     text: bool,
 }
 
+/// A value the document being rendered cannot predict: std seeds `RandomState` from the operating system.
+fn nonce() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let word = || {
+        std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish()
+    };
+    format!("{:016x}{:016x}", word(), word())
+}
+
+/// Puts the annotated raw HTML back where Comrak wrote its placeholders. A placeholder Comrak escaped (in an image's
+/// alternative text) gets the original HTML, escaped the same way.
+fn restore_raw_html(html: &str, placeholder: &str, raw_html: &[(String, String)]) -> String {
+    let mut output = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find(placeholder) {
+        let after = &rest[at + placeholder.len()..];
+        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+        let entry = after[..digits]
+            .parse::<usize>()
+            .ok()
+            .and_then(|index| raw_html.get(index));
+        let before = &rest[..at];
+        let tail = &after[digits..];
+        match entry {
+            Some((annotated, _)) if before.ends_with('<') && tail.starts_with('>') => {
+                output.push_str(&before[..before.len() - 1]);
+                output.push_str(annotated);
+                rest = &tail[1..];
+            }
+            Some((_, original)) if before.ends_with("&lt;") && tail.starts_with("&gt;") => {
+                output.push_str(&before[..before.len() - 4]);
+                for character in original.chars() {
+                    match character {
+                        '&' => output.push_str("&amp;"),
+                        '<' => output.push_str("&lt;"),
+                        '>' => output.push_str("&gt;"),
+                        '"' => output.push_str("&quot;"),
+                        other => output.push(other),
+                    }
+                }
+                rest = &tail[4..];
+            }
+            _ => {
+                output.push_str(before);
+                output.push_str(placeholder);
+                rest = after;
+            }
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
 fn html_offsets(raw: &str, literal: &str, start: u32) -> Option<Vec<u32>> {
     let exact = raw.trim_end_matches(['\r', '\n']) == literal.trim_end_matches(['\r', '\n']);
     let mut normalized = String::new();
@@ -164,6 +245,7 @@ fn annotate_html(
     html: &str,
     offsets: Option<&[u32]>,
     origins: &mut Vec<Option<HtmlOrigin>>,
+    attribute: &str,
 ) -> Result<String, RenderError> {
     let mut output = String::new();
     let mut cursor = 0;
@@ -256,11 +338,9 @@ fn annotate_html(
                     raw_text = None;
                 } else {
                     let origin = add_origin(cursor, end, false)?;
-                    // First duplicate attribute wins in the HTML parser. Raw
-                    // input cannot forge either provenance or Comrak positions.
-                    output.push_str(&format!(
-                        " data-mdb-origin=\"{origin}\" data-sourcepos=\"\""
-                    ));
+                    // The attribute's name is unknown to the document, and the
+                    // sanitizer keeps no other provenance attribute.
+                    output.push_str(&format!(" {attribute}=\"{origin}\""));
                     if matches!(
                         name.as_str(),
                         "script"
@@ -291,7 +371,7 @@ fn annotate_html(
                 text
             };
             let origin = add_origin(cursor, cursor + body.len(), true)?;
-            output.push_str(&format!("<span data-mdb-origin=\"{origin}\">{body}</span>"));
+            output.push_str(&format!("<span {attribute}=\"{origin}\">{body}</span>"));
             output.push_str(&text[body.len()..]);
         } else {
             output.push_str(text);
@@ -484,6 +564,31 @@ mod tests {
                 (start + text.encode_utf16().count()).to_string()
             );
         }
+    }
+
+    #[test]
+    fn raw_html_the_annotator_misreads_carries_no_provenance() {
+        let prelude = "- [ ] task\n\n<div>anchor</div>\n\n";
+        for html in [
+            // The HTML parser ends this comment at once; the annotator reads on to "-->".
+            "<!--><li data-sourcepos=\"1:1-1:10\" data-mdb-origin=\"0\">forged</li>",
+            // A quote in an attribute name quotes nothing for the HTML parser.
+            "<p a\"><li data-sourcepos=\"1:1-1:10\" data-mdb-origin=\"0\">forged</li>\" >",
+        ] {
+            let nodes = render_markdown(format!("{prelude}{html}")).unwrap();
+            let text = nodes.iter().position(|node| node.text == "forged").unwrap();
+            let item = &nodes[nodes[text].parent.unwrap() as usize];
+            assert_eq!(item.tag, "li", "{html}");
+            assert!(!item.attributes.contains_key("source-start"), "{html}");
+            assert!(
+                item.attributes.keys().all(|key| !key.starts_with("data-")),
+                "{html}"
+            );
+        }
+        // Raw HTML in an image's alternative text is shown as written.
+        let nodes = render_markdown("![a <b>bold</b> word](local.png)".into()).unwrap();
+        let image = nodes.iter().find(|node| node.tag == "img").unwrap();
+        assert_eq!(image.attributes["alt"], "a <b>bold</b> word");
     }
 
     #[test]
