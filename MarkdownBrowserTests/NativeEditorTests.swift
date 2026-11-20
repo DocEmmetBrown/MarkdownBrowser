@@ -35,12 +35,23 @@ import Testing
         count: Int = 1, draggingTo end: NSPoint? = nil) throws {
         let types: [NSEvent.EventType] = end == nil
             ? [.leftMouseDown, .leftMouseUp] : [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        var events: [NSEvent] = []
         for type in types {
             let location = type == .leftMouseDown ? point : end ?? point
             let event = try #require(NSEvent.mouseEvent(with: type, location: location,
                 modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: count, pressure: 1))
+            events.append(event)
+        }
+        for event in events {
             NSApp.postEvent(event, atStart: false)
+        }
+        let deadline = Date(timeIntervalSinceNow: 0.05)
+        while let event = NSApp.nextEvent(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp],
+            until: deadline, inMode: .eventTracking, dequeue: true)
+        {
+            NSApp.sendEvent(event)
         }
     }
 
@@ -743,12 +754,7 @@ import Testing
             let location = view.convert(point, to: nil)
             let target = window.contentView?.hitTest(location)
             #expect(target?.isDescendant(of: view) == true, "Target \(String(describing: target)), frame \(view.frame), point \(location)")
-            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                let event = try #require(NSEvent.mouseEvent(with: type, location: location,
-                    modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
-                NSApp.postEvent(event, atStart: false)
-            }
+            try postClick(in: window, at: location, modifiers: modifiers)
         }
 
         let parsed = NativeMarkdown(source)
