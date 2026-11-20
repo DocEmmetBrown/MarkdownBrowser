@@ -622,6 +622,21 @@ mod tests {
     }
 
     #[test]
+    fn raw_html_cannot_forge_an_overflowing_source_position() {
+        let forged = "18446744073709551615";
+        let source = format!(
+            "first\n\n<span data-sourcepos=\"2:{forged}-2:{forged}\" data-mdb-origin=\"0\">text</span>"
+        );
+        let rendered = render_markdown(source).unwrap();
+        assert!(rendered.iter().all(|node| {
+            node.attributes
+                .values()
+                .all(|value| !value.contains(forged))
+        }));
+        assert!(rendered.iter().any(|node| node.text == "text"));
+    }
+
+    #[test]
     fn code_highlighting_preserves_utf16_ranges_and_line_endings() {
         let source = "let greeting = \"😀\";\r\n// comment\r\n";
         let spans = highlight_source(source.into(), "rs".into(), false).unwrap();
