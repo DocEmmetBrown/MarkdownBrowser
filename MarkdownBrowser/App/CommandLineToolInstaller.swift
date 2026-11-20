@@ -66,9 +66,7 @@ enum CommandLineToolInstaller {
         panel.canCreateDirectories = true
         panel.prompt = "Install Here"
         panel.message = "Choose a folder on your PATH for the mdb command, such as /usr/local/bin, /opt/homebrew/bin or ~/.local/bin."
-        panel.directoryURL = ["/usr/local/bin", "/opt/homebrew/bin"]
-            .map { URL(fileURLWithPath: $0, isDirectory: true) }
-            .first { FileManager.default.fileExists(atPath: $0.path) }
+        panel.directoryURL = suggestedDirectory()
         guard panel.runModal() == .OK, let directory = panel.url else { return }
 
         let link = directory.appendingPathComponent(toolName)
@@ -84,6 +82,14 @@ enum CommandLineToolInstaller {
             Logger(subsystem: "MarkdownBrowser", category: "CLI").error("Install failed: \(error.localizedDescription, privacy: .public)")
             showManualInstall(directory: directory, tool: tool, error: error)
         }
+    }
+
+    /// Starts the folder picker where a link can be created without sudo: a writable PATH folder first, else any existing one.
+    private static func suggestedDirectory() -> URL? {
+        let home = getpwuid(getuid()).map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
+        let urls = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let fileManager = FileManager.default
+        return urls.first { fileManager.isWritableFile(atPath: $0.path) } ?? urls.first { fileManager.fileExists(atPath: $0.path) }
     }
 
     /// Replaces an earlier link to any copy of the app's launcher without asking; anything else needs `replacingExisting`.
