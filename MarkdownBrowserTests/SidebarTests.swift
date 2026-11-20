@@ -29,9 +29,8 @@ import Testing
         #expect(names(outline) == ["A.md", "b.md", "docs"])
 
         await workspace.open(root.appending(path: "docs/guide.md"))
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(names(outline) == ["A.md", "b.md", "docs", "guide.md"])
-        #expect((outline.item(atRow: outline.selectedRow) as? FileNode)?.name == "guide.md")
+        try await waitUntil { names(outline) == ["A.md", "b.md", "docs", "guide.md"] }
+        try await waitUntil { (outline.item(atRow: outline.selectedRow) as? FileNode)?.name == "guide.md" }
 
         try Data().write(to: root.appending(path: "a2.md"))
         workspace.root?.reloadChildren()
@@ -57,7 +56,6 @@ import Testing
         // Clicking the disclosure triangle lists the folder while NSOutlineView is mid-expansion.
         outline.expandItem(docs)
         #expect(names(outline) == ["docs", "guide.md"])
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(workspace.expanded == [docs.url])
+        try await waitUntil { workspace.expanded == [docs.url] }
     }
 }
