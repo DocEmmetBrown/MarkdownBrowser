@@ -105,14 +105,21 @@ nonisolated struct NativeLiveBlock: Equatable {
                 if text.substring(with: window).contains(tagStart) {
                     var cursor = String.Index(utf16Offset: range.location, in: source)
                     var offset = range.location
-                    while cursor < searchEnd, let match = source[cursor..<searchEnd].firstMatch(of: tags) {
-                        let location = offset + source.utf16.distance(from: cursor, to: match.range.lowerBound)
+                    while cursor < searchEnd, let found = source[cursor..<searchEnd].firstMatch(of: tagStart) {
+                        let location = offset + source.utf16.distance(from: cursor, to: found.range.lowerBound)
+                        // Until a tag inside this node opens a block, later tags belong to other nodes.
+                        if !started, location >= NSMaxRange(range) { break }
+                        // The full tag runs to its ">", which a document can leave far away, so it is matched only
+                        // for a tag that starts inside this node.
+                        cursor = found.range.upperBound
+                        offset = location + source.utf16.distance(from: found.range.lowerBound, to: found.range.upperBound)
+                        guard isInHTML(location) else { continue }
+                        // Before a block opens, a closing tag changes nothing, so its end is not needed.
+                        if !started, source[found.range].hasPrefix("</") { continue }
+                        guard let match = source[found.range.lowerBound..<searchEnd].prefixMatch(of: tags) else { continue }
                         let end = location + source.utf16.distance(from: match.range.lowerBound, to: match.range.upperBound)
                         cursor = match.range.upperBound
                         offset = end
-                        // Until a tag inside this node opens a block, later tags belong to other nodes.
-                        if !started, location >= NSMaxRange(range) { break }
-                        guard isInHTML(location) else { continue }
                         let tag = String(match.output.2).lowercased()
                         if match.output.1.isEmpty {
                             started = true
