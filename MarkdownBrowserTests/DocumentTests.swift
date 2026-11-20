@@ -133,6 +133,26 @@ final class FakeEditor: DocumentEditor {
         #expect(document.diskState == .inSync)
     }
 
+    @Test func reloadAdoptsTheLineSeparatorOnDisk() async throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).md")
+        try Data("one\ntwo\n".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let document = try OpenDocument(id: 1, url: url, kind: .markdown)
+        let host = NativeEditorHost()
+        document.editor = host
+        host.load(document, rootURL: nil, anchor: nil)
+        #expect(document.content.lineSeparator == "\n")
+
+        try Data("one\r\ntwo\r\n".utf8).write(to: url)
+        document.diskDidChange()
+        #expect(document.content.lineSeparator == "\r\n")
+        #expect(host.textView.string == "one\r\ntwo\r\n")
+
+        let end = (host.textView.string as NSString).length
+        host.textView.insertText("three\nfour", replacementRange: NSRange(location: end, length: 0))
+        #expect(await host.text(docId: document.id) == "one\r\ntwo\r\nthree\r\nfour")
+    }
+
     @Test func dirtyDocumentGetsConflictInsteadOfReload() async throws {
         let (document, editor, url) = try makeDocument("a\n")
         defer { try? FileManager.default.removeItem(at: url) }
