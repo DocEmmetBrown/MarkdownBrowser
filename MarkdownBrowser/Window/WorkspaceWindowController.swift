@@ -14,8 +14,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
     let state = WindowState()
     private let autosave = AutosaveCoordinator()
     private var closeApproved = false
+    private let bookmarks: BookmarkStore
 
-    init() {
+    init(bookmarks: BookmarkStore) {
+        self.bookmarks = bookmarks
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -52,7 +54,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
         state.workspace?.close()
         state.workspace = workspace
         state.isPreview = preview && workspace.isFolder
-        BookmarkStore.shared.noteOpened(workspace.rootURL, isDirectory: workspace.isFolder)
+        bookmarks.noteOpened(workspace.rootURL, isDirectory: workspace.isFolder)
         if let target = file ?? workspace.defaultSelection() {
             Task { await workspace.open(target, anchor: anchor, hit: hit, recordHistory: false) }
         }
