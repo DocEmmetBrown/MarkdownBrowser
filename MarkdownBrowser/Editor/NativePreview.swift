@@ -251,7 +251,7 @@ struct NativePreviewBlock: View {
                                 set: { _ in model.toggleTask(task, tree.source) }))
                                 .toggleStyle(.checkbox).labelsHidden().accessibilityLabel(tree.text(child))
                         } else {
-                            Text(node.tag == "ol" ? "\(offset + (Int(node.attributes["start"] ?? "") ?? 1))." : "•")
+                            Text(node.tag == "ol" ? "\(ordinal(offset))." : "•")
                                 .foregroundStyle(.secondary)
                         }
                         NativePreviewBlock(tree: tree, index: child, model: model)
@@ -339,6 +339,13 @@ struct NativePreviewBlock: View {
         ForEach(tree.children[index], id: \.self) { child in
             NativePreviewBlock(tree: tree, index: child, model: model)
         }
+    }
+
+    /// The number shown for an ordered list's item. Raw HTML can carry any `start`, so it is kept within the
+    /// nine digits CommonMark allows; adding the item's offset then can't overflow.
+    private func ordinal(_ offset: Int) -> Int {
+        let start = Int(node.attributes["start"] ?? "") ?? 1
+        return min(max(start, -999_999_999), 999_999_999) + offset
     }
 
     private func isInline(_ child: Int) -> Bool {
