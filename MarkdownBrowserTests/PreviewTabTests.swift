@@ -23,9 +23,20 @@ import Testing
         defer { try? FileManager.default.removeItem(at: root) }
         let file = { (name: String) in root.appending(path: name).normalizedFileURL }
 
+        let suite = "PreviewTabTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let recents = BookmarkStore(defaults: defaults)
+        let realRecents = WindowManager.shared.bookmarks
+        WindowManager.shared.bookmarks = recents
+        defer {
+            WindowManager.shared.bookmarks = realRecents
+            defaults.removePersistentDomain(forName: suite)
+        }
+
         let first = WindowManager.shared.newWindow()
         defer { for controller in WindowManager.shared.controllers { controller.window?.close() } }
         first.show(root)
+        #expect(recents.recents.first?.path == root.path)
         try await waitUntil { first.workspace?.selection == file("README.md") }
         #expect(first.state.isPreview)
         try await waitUntil { first.window?.tab.attributedTitle?.string == "README.md" }

@@ -5,6 +5,9 @@ final class WindowManager {
 
     private(set) var controllers: [WorkspaceWindowController] = []
 
+    /// Where opened folders and files are recorded. Tests swap in a throwaway store.
+    var bookmarks = BookmarkStore.shared
+
     /// Documents shown in any window or tab.
     var openDocuments: [OpenDocument] {
         controllers.compactMap { $0.workspace?.document }
@@ -24,7 +27,7 @@ final class WindowManager {
 
     @discardableResult
     func newWindow(tabbedWith parent: NSWindow? = nil) -> WorkspaceWindowController {
-        let controller = WorkspaceWindowController()
+        let controller = WorkspaceWindowController(bookmarks: bookmarks)
         controllers.append(controller)
         guard let window = controller.window else { return controller }
         if let parent {

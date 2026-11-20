@@ -192,19 +192,29 @@ import Testing
     }
 
     @Test func cancellingStopsTheSearchWithoutAResult() async throws {
-        let root = try makeFolder()
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        for index in 0..<20_000 { try Data().write(to: root.appending(path: "file-\(index).txt")) }
 
-        let task = Task { () -> [FilterUpdate] in
+        // Cancel from inside the consumer once the search has produced its first partial result.
+        let task = Task { () -> (updates: [FilterUpdate], cancelledAt: ContinuousClock.Instant?) in
             var updates: [FilterUpdate] = []
-            for await update in FileFilter.run(query: "readme", root: root, directories: [], recursive: true) {
+            var cancelledAt: ContinuousClock.Instant?
+            for await update in FileFilter.run(query: "file", root: root, directories: [], recursive: true) {
                 updates.append(update)
+                if cancelledAt == nil {
+                    cancelledAt = .now
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
             }
-            return updates
+            return (updates, cancelledAt)
         }
-        task.cancel()
-        let updates = await task.value
+        let (updates, cancelledAt) = await task.value
+        let started = try #require(cancelledAt, "the search finished before producing a partial result")
+        #expect(updates.first?.isComplete == false)
         #expect(updates.allSatisfy { !$0.isComplete })
+        #expect(ContinuousClock.now - started < .seconds(2))
     }
 }
 
