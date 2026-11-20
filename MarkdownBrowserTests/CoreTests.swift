@@ -56,6 +56,16 @@ import Testing
         #expect(!PathPolicy.isWithin(URL(filePath: "/tmp/workspace-other/a.md"), roots: [root]))
     }
 
+    @Test func relativeComponentsHandleTrailingSlashesAndTheFilesystemRoot() {
+        #expect(PathPolicy.relativeComponents(of: "/a/b/c.md", under: "/a") == ["b", "c.md"])
+        #expect(PathPolicy.relativeComponents(of: "/a/b/", under: "/a/") == ["b"])
+        #expect(PathPolicy.relativeComponents(of: "/a", under: "/a") == [])
+        #expect(PathPolicy.relativeComponents(of: "/a/b/c.md", under: "/") == ["a", "b", "c.md"])
+        #expect(PathPolicy.relativeComponents(of: "/", under: "/") == [])
+        #expect(PathPolicy.relativeComponents(of: "/ab/c.md", under: "/a") == nil)
+        #expect(PathPolicy.relativeComponents(of: "/a", under: "/a/b") == nil)
+    }
+
     @Test func rejectsSymlinkEscapingRoot() throws {
         let base = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let root = base.appending(path: "root")

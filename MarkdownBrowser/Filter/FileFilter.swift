@@ -152,20 +152,22 @@ nonisolated enum FileFilter {
         /// Records the entry if it matches; returns whether it did.
         mutating func consider(_ url: URL) -> Bool {
             let name = url.lastPathComponent
-            var path: String?
+            var queried: [String]?
             let score: Int?
             if matcher.isPathQuery {
-                path = relativePath(of: url, name: name)
-                score = matcher.score(path!)
+                queried = relativeComponents(of: url, name: name)
+                score = matcher.score(queried!.joined(separator: "/"))
             } else {
                 score = matcher.score(name)
             }
             guard let score else { return false }
-            let relative = path ?? relativePath(of: url, name: name)
+            let components = queried ?? relativeComponents(of: url, name: name)
             let values = try? url.resourceValues(forKeys: FileFilter.keys)
             let isDirectory = (values?.isDirectory ?? false) && !(values?.isPackage ?? false)
-            let folder = relative.count > name.count ? String(relative.dropLast(name.count + 1)) : ""
-            results.append(FilterResult(url: url, name: name, folder: folder, isDirectory: isDirectory, score: score))
+            let folder = components.dropLast().joined(separator: "/")
+            results.append(
+                FilterResult(
+                    url: url.normalizedFileURL, name: name, folder: folder, isDirectory: isDirectory, score: score))
             matchCount += 1
             if results.count >= 2 * FileFilter.maxResults { results = ranked }
             return true
@@ -179,9 +181,8 @@ nonisolated enum FileFilter {
             Array(results.sorted(by: FileFilter.isRankedBefore).prefix(FileFilter.maxResults))
         }
 
-        private func relativePath(of url: URL, name: String) -> String {
-            let path = url.path(percentEncoded: false)
-            return path.hasPrefix(rootPath + "/") ? String(path.dropFirst(rootPath.count + 1)) : name
+        private func relativeComponents(of url: URL, name: String) -> [String] {
+            PathPolicy.relativeComponents(of: url.path(percentEncoded: false), under: rootPath) ?? [name]
         }
     }
 

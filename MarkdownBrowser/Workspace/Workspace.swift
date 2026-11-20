@@ -121,8 +121,8 @@ final class Workspace {
     var subtitle: String {
         guard isFolder, let selection else { return "" }
         let path = selection.path(percentEncoded: false)
-        let rootPath = rootURL.path(percentEncoded: false)
-        return path.hasPrefix(rootPath + "/") ? String(path.dropFirst(rootPath.count + 1)) : path
+        let components = PathPolicy.relativeComponents(of: path, under: rootURL.path(percentEncoded: false))
+        return components.flatMap { $0.isEmpty ? nil : $0.joined(separator: "/") } ?? path
     }
 
     var canGoBack: Bool { !backStack.isEmpty }

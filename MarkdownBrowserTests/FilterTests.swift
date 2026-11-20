@@ -122,6 +122,20 @@ import Testing
         #expect(update.results.first { $0.name == "guide.md" }?.isDirectory != true)
     }
 
+    @Test func nestedFolderResultsHaveNoTrailingSlash() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let update = await FileFilter.results(query: "deep", root: root, directories: [], recursive: true)
+        let deep = try #require(update.results.first { $0.name == "deep" })
+        #expect(deep.isDirectory)
+        #expect(deep.folder == "docs")
+        #expect(!deep.url.path(percentEncoded: false).hasSuffix("/"))
+
+        let byPath = await FileFilter.results(query: "docs/deep", root: root, directories: [], recursive: true)
+        #expect(byPath.results.contains { $0.name == "deep" })
+    }
+
     @Test func rankedBestFirst() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }
