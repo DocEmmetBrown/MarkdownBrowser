@@ -734,6 +734,7 @@ import Testing
         window.contentView = host.scrollView
         window.makeFirstResponder(host.textView)
         window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
         defer { window.orderOut(nil) }
         host.scrollView.layoutSubtreeIfNeeded()
         host.livePreview.updateViewport()
@@ -851,6 +852,7 @@ import Testing
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host.scrollView
         window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
         defer { window.orderOut(nil) }
 
         func rendered() async throws -> NativeInlineTextView {
@@ -908,6 +910,7 @@ import Testing
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host.scrollView
         window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
         defer { window.orderOut(nil) }
         host.livePreview.reveal((source as NSString).range(of: "- item 0"))
         host.scrollView.layoutSubtreeIfNeeded()
@@ -946,6 +949,7 @@ import Testing
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host.scrollView
         window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
         defer { window.orderOut(nil) }
         for (renderedText, rawText) in [("let value", "value = 42"), ("same value", "value**")] {
             host.textView.setSelectedRange(NSRange(location: 2, length: 0))
