@@ -51,6 +51,8 @@ nonisolated enum TextCodec {
             return (Data(utf16BEBOM) + (text.data(using: .utf16BigEndian) ?? Data()), encoding)
         case .latin1:
             let units = Array(text.utf16)
+            // Deliberate exception to byte preservation: a character above U+00FF cannot be written as
+            // Latin-1, so the whole file becomes UTF-8 (no BOM), rewriting its other non-ASCII bytes too.
             guard units.allSatisfy({ $0 <= 0xFF }) else { return (Data(text.utf8), .utf8(bom: false)) }
             return (Data(units.map { UInt8($0) }), .latin1)
         }

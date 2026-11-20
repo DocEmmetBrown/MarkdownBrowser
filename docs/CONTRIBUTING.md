@@ -53,7 +53,7 @@ The native build phase declares the generated Swift/C/modulemap and Rust archive
 
 **Never re-serialize Markdown.** The document is raw source. Parsing and rendering consume copies; they must never print an AST back into the editor or into a saved file.
 
-**Preserve bytes.** `TextCodec` retains encoding and BOM. Typed, pasted, dropped and committed IME text use the document's line separator. Untouched text, including mixed line endings, stays unchanged.
+**Preserve bytes.** `TextCodec` retains encoding and BOM. Typed, pasted, dropped and committed IME text use the document's line separator. Untouched text, including mixed line endings, stays unchanged. The one exception: a Latin-1 file is saved as UTF-8 (without BOM) once it contains a character Latin-1 cannot represent (above U+00FF), which rewrites its other non-ASCII bytes.
 
 **Keep undo and composition intact.** Programmatic edits must use the editor's `shouldChangeText`/text storage/`didChangeText` path. Styling changes attributes, not characters, and is deferred during marked-text composition.
 
