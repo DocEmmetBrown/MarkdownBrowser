@@ -238,7 +238,7 @@ impl Matcher {
         }
         if !query.regexp {
             return Matcher::Literal(
-                normalize(&query.search, query.case_sensitive),
+                normalize_query(&query.search, query.case_sensitive),
                 query.case_sensitive,
             );
         }
@@ -389,6 +389,18 @@ fn normalize(text: &str, case_sensitive: bool) -> Vec<u16> {
     } else {
         decomposed.to_lowercase().encode_utf16().collect()
     }
+}
+
+/// Normalizes the query one character at a time, exactly like the document, so context-sensitive
+/// lowercasing (Greek final sigma) cannot make a query miss its own text.
+fn normalize_query(text: &str, case_sensitive: bool) -> Vec<u16> {
+    let mut out = Vec::new();
+    let mut unit = Vec::new();
+    for c in text.chars() {
+        normalize_char(c, case_sensitive, &mut unit);
+        out.extend_from_slice(&unit);
+    }
+    out
 }
 
 fn normalize_char(c: char, case_sensitive: bool, into: &mut Vec<u16>) {
