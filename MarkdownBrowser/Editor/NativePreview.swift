@@ -216,10 +216,29 @@ final class NativePreviewModel {
             data = received
         }
         guard data.count <= limit else { throw tooLarge }
-        if ["svg", "svgz"].contains(url.pathExtension.lowercased()) || data.range(of: Data("<svg".utf8)) != nil {
+        if ["svg", "svgz"].contains(url.pathExtension.lowercased()) || isSvg(data) {
             return try await Task.detached { try rasterizeSvg(source: data) }.value
         }
         return data
+    }
+
+    /// Whether `data` is SVG markup, judged from its leading bytes only: raster images often carry
+    /// `<svg` inside XMP or text metadata, and a whole-file scan would misroute them to the rasterizer.
+    nonisolated static func isSvg(_ data: Data) -> Bool {
+        let head = [UInt8](data.prefix(8192))
+        let rasterSignatures: [[UInt8]] = [[0x89, 0x50, 0x4E, 0x47], [0xFF, 0xD8, 0xFF], Array("GIF8".utf8)]
+        if rasterSignatures.contains(where: head.starts(with:)) { return false }
+        if head.starts(with: Array("RIFF".utf8)), head.dropFirst(8).starts(with: Array("WEBP".utf8)) { return false }
+
+        var body = head[...]
+        if body.starts(with: [0xEF, 0xBB, 0xBF]) { body = body.dropFirst(3) }
+        body = body.drop { [0x20, 0x09, 0x0A, 0x0C, 0x0D].contains($0) }
+        let svgTag = Array("<svg".utf8)
+        if body.starts(with: svgTag) { return true }
+        // An XML prolog, doctype or comment may precede the root element.
+        let preambles = ["<?xml", "<!DOCTYPE svg", "<!--"].map { Array($0.utf8) }
+        guard preambles.contains(where: body.starts(with:)) else { return false }
+        return Data(body).range(of: Data(svgTag)) != nil
     }
 }
 
