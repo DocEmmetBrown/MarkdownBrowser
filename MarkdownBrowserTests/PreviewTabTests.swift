@@ -4,11 +4,6 @@ import Testing
 @testable import MarkdownBrowser
 
 @Suite(.serialized) struct PreviewTabTests {
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        for _ in 0..<100 where !condition() { try await Task.sleep(for: .milliseconds(20)) }
-        #expect(condition())
-    }
-
     private func tabButtons(in view: NSView) -> [NSView] {
         if String(describing: type(of: view)) == "NSTabButton" { return [view] }
         return view.subviews.flatMap(tabButtons(in:))
