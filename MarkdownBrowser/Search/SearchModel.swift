@@ -57,6 +57,14 @@ final class SearchModel {
         task = Task { await search() }
     }
 
+    /// Like `run()`, but returns once the search has finished, so callers never see results from two runs.
+    func runAndWait() async {
+        task?.cancel()
+        let current = Task { await search() }
+        task = current
+        await current.value
+    }
+
     func cancel() {
         task?.cancel()
         isSearching = false
@@ -85,6 +93,7 @@ final class SearchModel {
         }
         if let message = SearchEngine().validate(options) {
             errorMessage = SearchError.invalidPattern(message).localizedDescription
+            isSearching = false
             return
         }
         isSearching = true
@@ -100,7 +109,10 @@ final class SearchModel {
     func replaceAll() async {
         task?.cancel()
         let engine = SearchEngine()
-        guard !options.query.isEmpty, engine.validate(options) == nil else { return }
+        guard !options.query.isEmpty, engine.validate(options) == nil else {
+            isSearching = false
+            return
+        }
         isSearching = true
         let (sources, documents) = await gatherSources()
         var total = ReplaceSummary()

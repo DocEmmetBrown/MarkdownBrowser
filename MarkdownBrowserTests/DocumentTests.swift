@@ -180,6 +180,46 @@ final class FakeEditor: DocumentEditor {
         #expect(model.hitCount == 0)
     }
 
+    private func folderModel(files: Int) throws -> (SearchModel, URL) {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for index in 0..<files { try Data("needle\n".utf8).write(to: root.appending(path: "\(index).md")) }
+        let model = SearchModel(root: root)
+        model.options.query = "needle"
+        return (model, root)
+    }
+
+    private func waitUntilSearching(_ model: SearchModel) async {
+        for _ in 0..<1000 where !model.isSearching { await Task.yield() }
+    }
+
+    @Test func invalidPatternStopsTheSpinnerOfARunningSearch() async throws {
+        let (model, root) = try folderModel(files: 50)
+        defer { try? FileManager.default.removeItem(at: root) }
+        model.run()
+        await waitUntilSearching(model)
+        #expect(model.isSearching)
+
+        model.options.regex = true
+        model.options.query = "("
+        await model.runAndWait()
+        #expect(model.errorMessage != nil)
+        #expect(!model.isSearching)
+    }
+
+    @Test func replaceAllSearchDoesNotDuplicateResultsOfARunningSearch() async throws {
+        let (model, root) = try folderModel(files: 50)
+        defer { try? FileManager.default.removeItem(at: root) }
+        model.run()
+        await waitUntilSearching(model)
+        #expect(model.isSearching)
+
+        await model.runAndWait()
+        #expect(model.results.count == 50)
+        #expect(Set(model.results.map(\.id)).count == 50)
+        #expect(!model.isSearching)
+    }
+
     @Test func stepsThroughResultsWithOptionalWrap() async throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).md")
         try Data("a a\n".utf8).write(to: url)

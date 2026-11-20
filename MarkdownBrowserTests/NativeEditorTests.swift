@@ -440,6 +440,64 @@ import Testing
         #expect(host.textView.string == "**bold** plain")
     }
 
+    @Test func editAtTheTopRestylesOnlyTheEditedRegion() throws {
+        let source = "Intro\n\n" + (1...200).map { "# Heading \($0)\n\nSome **bold** text.\n\n" }.joined()
+        let (document, url) = try makeDocument(source)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let host = NativeEditorHost()
+        host.load(document, rootURL: nil, anchor: nil)
+        let storage = try #require(host.textView.textStorage)
+        func fontSize(at location: Int) -> CGFloat? {
+            (storage.attribute(.font, at: location, effectiveRange: nil) as? NSFont)?.pointSize
+        }
+        let last = (source as NSString).range(of: "# Heading 200")
+
+        host.textView.insertText("x", replacementRange: NSRange(location: 0, length: 0))
+        host.ensureMarkdown()
+        #expect(host.restyledRanges == [NSRange(location: 0, length: 2)])
+        #expect(fontSize(at: last.location) == 14)
+        #expect(fontSize(at: last.location + 1) == 23)
+        #expect(fontSize(at: NSMaxRange(last)) == 23)
+        #expect(fontSize(at: NSMaxRange(last) + 1) == 14)
+
+        host.textView.insertText("", replacementRange: NSRange(location: 0, length: 1))
+        host.ensureMarkdown()
+        #expect(host.restyledRanges == [NSRange(location: 0, length: 1)])
+        #expect(fontSize(at: last.location) == 23)
+        #expect(fontSize(at: NSMaxRange(last)) == 14)
+        #expect(host.textView.string == source)
+
+        // Turning the intro into a heading changes one style; the 200 below still only move.
+        host.textView.insertText("# ", replacementRange: NSRange(location: 0, length: 0))
+        host.ensureMarkdown()
+        #expect(host.restyledRanges == [NSRange(location: 0, length: 7)])
+        #expect(fontSize(at: 6) == 23)
+        #expect(fontSize(at: last.location + 2) == 23)
+    }
+
+    @Test func editInsideAStyleInvalidatesItsShiftedExtent() {
+        let style = NativeMarkdownStyle(range: NSRange(location: 5, length: 10), kind: .strong, level: 0)
+        // Offsets 3..<7 became six characters: the old attributes now end at 17 even though a style sits at 5..<15 again.
+        let ranges = NativeMarkdownStyle.changedRanges(
+            from: [style], to: [style], edited: NSRange(location: 3, length: 6), delta: 2)
+        #expect(ranges.contains(NSRange(location: 3, length: 14)))
+    }
+
+    @Test func untrackedEditFallsBackToRestylingMovedStyles() throws {
+        let (document, url) = try makeDocument("Intro\n\n# One\n\ntail")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let host = NativeEditorHost()
+        host.load(document, rootURL: nil, anchor: nil)
+        let storage = try #require(host.textView.textStorage)
+        host.textView.insertText("x", replacementRange: NSRange(location: 0, length: 0))
+        // Bypasses the delegate, so the tracked edit no longer explains the length change.
+        storage.replaceCharacters(in: NSRange(location: storage.length, length: 0), with: "y")
+        host.ensureMarkdown()
+        #expect(host.restyledRanges.contains { NSLocationInRange(8, $0) && NSLocationInRange(12, $0) })
+        #expect((storage.attribute(.font, at: 8, effectiveRange: nil) as? NSFont)?.pointSize == 23)
+        #expect((storage.attribute(.font, at: 13, effectiveRange: nil) as? NSFont)?.pointSize == 14)
+    }
+
     @Test func nonMarkdownCodeHighlightsWithoutChangingCrLf() async throws {
         let source = "let greeting = \"hello\";\r\n// comment\r\n"
         let url = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).rs")
