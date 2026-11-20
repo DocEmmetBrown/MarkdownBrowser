@@ -693,7 +693,12 @@ final class NativeTextView: NSTextView {
     func trackRenderedSelection(at position: Int, event: NSEvent, in window: NSWindow) {
         let granularity: NSSelectionGranularity = event.clickCount >= 3
             ? .selectByParagraph : event.clickCount == 2 ? .selectByWord : .selectByCharacter
-        let clicked = selectionRange(forProposedRange: NSRange(location: position, length: 0), granularity: granularity)
+        func selection(at position: Int) -> NSRange {
+            let proposed = NSRange(location: position, length: 0)
+            return granularity == .selectByCharacter
+                ? proposed : selectionRange(forProposedRange: proposed, granularity: granularity)
+        }
+        let clicked = selection(at: position)
         let previous = selectedRange()
         let anchor = event.modifierFlags.contains(.shift)
             ? NSRange(location: selectionAffinity == .upstream ? NSMaxRange(previous) : previous.location, length: 0)
@@ -718,8 +723,7 @@ final class NativeTextView: NSTextView {
             guard next != nil || scrolled else { return }
             let point = self.convert(drag.locationInWindow, from: nil)
             let position = self.characterIndexForInsertion(at: point)
-            select(self.selectionRange(forProposedRange: NSRange(location: position, length: 0), granularity: granularity),
-                tracking: true)
+            select(selection(at: position), tracking: true)
         }
         setSelectedRange(selectedRange(), affinity: selectionAffinity, stillSelecting: false)
     }
