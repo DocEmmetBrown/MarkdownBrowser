@@ -453,10 +453,6 @@ final class Workspace {
         await setRoot(parent)
     }
 
-    func isExpanded(_ node: FileNode) -> Bool {
-        expanded.contains(node.url)
-    }
-
     func setExpanded(_ node: FileNode, _ isExpanded: Bool) {
         if isExpanded {
             node.loadChildrenIfNeeded()
