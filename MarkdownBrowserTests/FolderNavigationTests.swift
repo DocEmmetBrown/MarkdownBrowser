@@ -128,14 +128,14 @@ private final class AccessDenier: WorkspaceDelegate {
             guard let outline = outline(in: window.contentView!) else { return [] }
             return (0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode)?.name }
         }
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(shown().contains("README.md"))
+        try await waitUntil { shown().contains("README.md") }
 
         await workspace.setRoot(docs)
-        try await Task.sleep(for: .milliseconds(200))
-        window.layoutIfNeeded()
-        #expect(shown() == ["deep", "guide.md"])
+        try await waitUntil {
+            window.layoutIfNeeded()
+            return shown() == ["deep", "guide.md"]
+        }
         let current = try #require(outline(in: window.contentView!))
-        #expect((current.item(atRow: current.selectedRow) as? FileNode)?.name == "guide.md")
+        try await waitUntil { (current.item(atRow: current.selectedRow) as? FileNode)?.name == "guide.md" }
     }
 }

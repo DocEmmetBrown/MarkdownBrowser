@@ -307,7 +307,7 @@ import Testing
 
         host.applyText(docId: document.id, text: "**intermediate**")
         host.applyText(docId: document.id, text: "[latest](current.md)")
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { host.preview.tree?.source == "[latest](current.md)" }
 
         #expect(host.textView.string == "[latest](current.md)")
         let color = try #require(host.textView.textStorage?.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor)
@@ -565,23 +565,23 @@ import Testing
         window.contentView = view
         view.layoutSubtreeIfNeeded()
         host.livePreview.updateViewport()
-        for _ in 0..<10 {
-            try await Task.sleep(for: .milliseconds(30))
+        func rendered() -> [NSView] {
             view.layoutSubtreeIfNeeded()
+            return host.textView.subviews.filter { $0.accessibilityIdentifier().hasPrefix("markdown-block-") }
+        }
+        try await waitUntil {
+            let views = rendered()
+            return !views.isEmpty && views.allSatisfy { $0.frame.width > 700 && $0.frame.height > 0 }
         }
         #expect(host.scrollView.contentSize.width > 800)
-        let rendered = host.textView.subviews.filter { $0.accessibilityIdentifier().hasPrefix("markdown-block-") }
-        #expect(!rendered.isEmpty)
-        #expect(rendered.allSatisfy { $0.frame.width > 700 && $0.frame.height > 0 })
-        let largeWidth = rendered.first?.frame.width ?? 0
+        let largeWidth = rendered().first?.frame.width ?? 0
         window.setContentSize(NSSize(width: 600, height: 600))
         view.layoutSubtreeIfNeeded()
         host.livePreview.updateViewport()
-        try await Task.sleep(for: .milliseconds(100))
-        view.layoutSubtreeIfNeeded()
-        let resized = host.textView.subviews.filter { $0.accessibilityIdentifier().hasPrefix("markdown-block-") }
-        #expect(!resized.isEmpty)
-        #expect(resized.allSatisfy { $0.frame.width < largeWidth })
+        try await waitUntil {
+            let views = rendered()
+            return !views.isEmpty && views.allSatisfy { $0.frame.width < largeWidth }
+        }
         #expect(host.textView.string == source)
         host.setSourceMode(true)
         #expect(host.textView.subviews.allSatisfy { !$0.accessibilityIdentifier().hasPrefix("markdown-block-") })
@@ -649,8 +649,6 @@ import Testing
         defer { window.orderOut(nil) }
         host.scrollView.layoutSubtreeIfNeeded()
         host.livePreview.updateViewport()
-        try await Task.sleep(for: .milliseconds(150))
-        host.scrollView.layoutSubtreeIfNeeded()
 
         func click(_ view: NSView, point: NSPoint, modifiers: NSEvent.ModifierFlags = []) throws {
             let location = view.convert(point, to: nil)
@@ -666,39 +664,42 @@ import Testing
 
         let parsed = NativeMarkdown(source)
         let plans = NativeLiveBlock.blocks(source: source, markdown: parsed)
-        func renderedView(_ tag: String) throws -> NSView {
-            let plan = try #require(plans.first { parsed.rendered.nodes[$0.renderIndex].tag == tag })
-            return try #require(host.textView.subviews.first {
-                $0.accessibilityIdentifier() == "markdown-block-\(plan.renderIndex)"
-            })
+        func blockView(_ tag: String) -> NSView? {
+            guard let plan = plans.first(where: { parsed.rendered.nodes[$0.renderIndex].tag == tag }) else { return nil }
+            return host.textView.subviews.first { $0.accessibilityIdentifier() == "markdown-block-\(plan.renderIndex)" }
+        }
+        func renderedView(_ tag: String) throws -> NSView { try #require(blockView(tag)) }
+        try await waitUntil {
+            host.scrollView.layoutSubtreeIfNeeded()
+            return ["details", "ul", "p"].allSatisfy { blockView($0) != nil }
         }
         let disclosure = try renderedView("details")
         let closedHeight = disclosure.frame.height
         try click(disclosure, point: NSPoint(x: 7, y: 9))
-        try await Task.sleep(for: .milliseconds(350))
-        host.scrollView.layoutSubtreeIfNeeded()
+        try await waitUntil {
+            host.scrollView.layoutSubtreeIfNeeded()
+            return disclosure.frame.height > closedHeight
+        }
         #expect(host.textView.string == source)
         #expect(host.liveLayout.concealed.contains((source as NSString).range(of: "<details>").location))
-        #expect(disclosure.frame.height > closedHeight)
         let checkbox = try renderedView("ul")
         try click(checkbox, point: NSPoint(x: 16, y: 9))
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(host.textView.string == source.replacingOccurrences(of: "[ ]", with: "[x]"))
+        let checked = source.replacingOccurrences(of: "[ ]", with: "[x]")
+        try await waitUntil { host.textView.string == checked && host.preview.tree?.source == checked }
         host.textView.undoManager?.undo()
         #expect(host.textView.string == source)
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitUntil { host.preview.tree?.source == source }
         host.scrollView.layoutSubtreeIfNeeded()
         var followed: (String, Bool)?
         host.onOpenLink = { _, href, newTab in followed = (href, newTab) }
         let link = try renderedView("p")
         try click(link, point: NSPoint(x: 10, y: 9), modifiers: [.command, .shift])
-        try await Task.sleep(for: .milliseconds(100))
+        try await waitUntil { followed != nil }
         #expect(followed?.0 == "guide.md")
         #expect(followed?.1 == true)
         try click(link, point: NSPoint(x: 10, y: 9))
-        try await Task.sleep(for: .milliseconds(100))
         let label = (source as NSString).range(of: "guide")
-        #expect(NSLocationInRange(host.textView.selectedRange().location, label))
+        try await waitUntil { NSLocationInRange(host.textView.selectedRange().location, label) }
         #expect(host.textView.string == source)
     }
 
@@ -748,8 +749,10 @@ import Testing
             host.textView.setSelectedRange(NSRange(location: 2, length: 0))
             host.scrollView.layoutSubtreeIfNeeded()
             host.livePreview.updateViewport()
-            try await Task.sleep(for: .milliseconds(150))
-            host.scrollView.layoutSubtreeIfNeeded()
+            try await waitUntil {
+                host.scrollView.layoutSubtreeIfNeeded()
+                return inlineView(in: host.textView, containing: "😀 before") != nil
+            }
             return try #require(inlineView(in: host.textView, containing: "😀 before"))
         }
 
@@ -757,8 +760,7 @@ import Testing
         let bold = (source as NSString).range(of: "**repeat**")
         var position = (view.string as NSString).range(of: "repeat").location + 2
         try postClick(in: window, at: clickPoint(in: view, at: position))
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(host.textView.selectedRange() == NSRange(location: bold.location + 4, length: 0))
+        try await waitUntil { host.textView.selectedRange() == NSRange(location: bold.location + 4, length: 0) }
         #expect(window.firstResponder === host.textView)
         host.textView.moveRightAndModifySelection(nil)
         #expect(host.textView.selectedRange() == NSRange(location: bold.location + 4, length: 1))
@@ -766,15 +768,13 @@ import Testing
         view = try await rendered()
         position = (view.string as NSString).range(of: "repeat").location + 2
         try postClick(in: window, at: clickPoint(in: view, at: position), count: 2)
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(host.textView.selectedRange() == NSRange(location: bold.location + 2, length: 6))
+        try await waitUntil { host.textView.selectedRange() == NSRange(location: bold.location + 2, length: 6) }
 
         view = try await rendered()
         position = (view.string as NSString).range(of: "repeat", options: .backwards).location + 3
         let code = (source as NSString).range(of: "`repeat`")
         try postClick(in: window, at: clickPoint(in: view, at: position), modifiers: .shift)
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(host.textView.selectedRange() == NSRange(location: 2, length: code.location + 4 - 2))
+        try await waitUntil { host.textView.selectedRange() == NSRange(location: 2, length: code.location + 4 - 2) }
         #expect(host.textView.string == source)
         #expect(!(host.textView.undoManager?.canUndo ?? false))
 
@@ -782,9 +782,8 @@ import Testing
         position = (view.string as NSString).range(of: "repeat").location + 2
         let point = try clickPoint(in: view, at: position)
         try postClick(in: window, at: point, draggingTo: NSPoint(x: point.x + 120, y: point.y))
-        try await Task.sleep(for: .milliseconds(150))
+        try await waitUntil { host.textView.selectedRange().length > 0 }
         #expect(host.textView.selectedRange().location == bold.location + 4)
-        #expect(host.textView.selectedRange().length > 0)
         #expect(host.textView.string == source)
     }
 
@@ -807,19 +806,23 @@ import Testing
         let targetRange = (source as NSString).range(of: target)
         host.textView.scrollRangeToVisible(NSRange(location: targetRange.location, length: 0))
         host.livePreview.updateViewport()
-        try await Task.sleep(for: .milliseconds(200))
-        host.scrollView.layoutSubtreeIfNeeded()
+        try await waitUntil {
+            host.scrollView.layoutSubtreeIfNeeded()
+            return inlineView(in: host.textView, containing: "Target word") != nil
+        }
         let view = try #require(inlineView(in: host.textView, containing: "Target word"))
         let position = (view.string as NSString).range(of: "wrapping text").location + 4
         let point = try clickPoint(in: view, at: position)
         try postClick(in: window, at: point)
-        try await Task.sleep(for: .milliseconds(350))
-        host.scrollView.layoutSubtreeIfNeeded()
         let expected = (source as NSString).range(of: "wrapping text").location + 4
-        #expect(host.textView.selectedRange() == NSRange(location: expected, length: 0))
-        let rect = host.textView.firstRect(forCharacterRange: NSRange(location: expected, length: 0), actualRange: nil)
-        let caret = window.convertPoint(fromScreen: NSPoint(x: rect.minX, y: rect.midY))
-        #expect(abs(caret.y - point.y) <= 1)
+        func caretY() -> CGFloat {
+            let rect = host.textView.firstRect(forCharacterRange: NSRange(location: expected, length: 0), actualRange: nil)
+            return window.convertPoint(fromScreen: NSPoint(x: rect.minX, y: rect.midY)).y
+        }
+        try await waitUntil {
+            host.scrollView.layoutSubtreeIfNeeded()
+            return host.textView.selectedRange() == NSRange(location: expected, length: 0) && abs(caretY() - point.y) <= 1
+        }
         #expect(host.scrollView.contentView.bounds.minY > 0)
         #expect(host.textView.string == source)
     }
@@ -840,13 +843,15 @@ import Testing
             host.textView.setSelectedRange(NSRange(location: 2, length: 0))
             host.scrollView.layoutSubtreeIfNeeded()
             host.livePreview.updateViewport()
-            try await Task.sleep(for: .milliseconds(200))
-            host.scrollView.layoutSubtreeIfNeeded()
+            try await waitUntil {
+                host.scrollView.layoutSubtreeIfNeeded()
+                return inlineView(in: host.textView, containing: renderedText) != nil
+            }
             let view = try #require(inlineView(in: host.textView, containing: renderedText))
             let position = (view.string as NSString).range(of: "value").location + 2
             try postClick(in: window, at: clickPoint(in: view, at: position))
-            try await Task.sleep(for: .milliseconds(150))
-            #expect(host.textView.selectedRange() == NSRange(location: (source as NSString).range(of: rawText).location + 2, length: 0))
+            let expected = NSRange(location: (source as NSString).range(of: rawText).location + 2, length: 0)
+            try await waitUntil { host.textView.selectedRange() == expected }
         }
         #expect(host.textView.string == source)
     }
@@ -932,8 +937,8 @@ import Testing
         host.ensureMarkdown()
         host.scrollView.layoutSubtreeIfNeeded()
         host.livePreview.updateViewport()
-        try await Task.sleep(for: .milliseconds(200))
         let firstParagraph = try #require(paragraphs.first)
+        try await waitUntil { inlineView(in: host.textView, containing: "same & 😀 repeat", index: firstParagraph) != nil }
         let label = try #require(inlineView(in: host.textView, containing: "same & 😀 repeat", index: firstParagraph))
         #expect(label.accessibilityCustomActions()?.contains { $0.name == "Edit Markdown Source" } == true)
         #expect(label.accessibilityPerformPress())
