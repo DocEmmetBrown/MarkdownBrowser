@@ -110,9 +110,7 @@ final class FileTree {
 
     /// Path components from the root to `path` (canonical), or nil when it's outside the tree.
     func relativeComponents(ofPath path: String) -> [String]? {
-        if path == rootPath { return [] }
-        guard path.hasPrefix(rootPath + "/") else { return nil }
-        return path.dropFirst(rootPath.count + 1).split(separator: "/").map(String.init)
+        PathPolicy.relativeComponents(of: path, under: rootPath)
     }
 
     func relativeComponents(of url: URL) -> [String]? {

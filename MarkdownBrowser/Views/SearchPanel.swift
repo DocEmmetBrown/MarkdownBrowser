@@ -118,9 +118,11 @@ struct SearchPanel: View {
 
     private func relativePath(_ url: URL) -> String {
         let path = url.path(percentEncoded: false)
-        let root = workspace.rootURL.path(percentEncoded: false)
-        return workspace.isFolder && path.hasPrefix(root + "/")
-            ? String(path.dropFirst(root.count + 1)) : (path as NSString).abbreviatingWithTildeInPath
+        let components =
+            workspace.isFolder
+            ? PathPolicy.relativeComponents(of: path, under: workspace.rootURL.path(percentEncoded: false)) : nil
+        if let components, !components.isEmpty { return components.joined(separator: "/") }
+        return (path as NSString).abbreviatingWithTildeInPath
     }
 }
 
