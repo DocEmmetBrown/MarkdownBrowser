@@ -385,7 +385,12 @@ final class NativeEditorHost: NSObject, DocumentEditor, NSTextViewDelegate {
         guard document?.kind == .markdown else { return }
         let source = textView.string
         guard source.utf8.count <= OpenDocument.livePreviewSizeLimit else {
-            resetMarkdown()
+            // resetMarkdown() re-attributes the whole storage, so run it once when the document crosses the limit.
+            if markdown != nil {
+                resetMarkdown()
+            } else {
+                editedStyleRange = nil
+            }
             return
         }
         let currentRevision = revision

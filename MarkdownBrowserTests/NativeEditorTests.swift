@@ -77,6 +77,46 @@ import Testing
         #expect(try Data(contentsOf: url) == Data([0xEF, 0xBB, 0xBF]) + Data("# Title\r\nnew\r\n😀".utf8))
     }
 
+    @MainActor private final class AttributeEditRecorder: NSObject {
+        private(set) var longest = 0
+
+        init(_ storage: NSTextStorage) {
+            super.init()
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(processed), name: NSTextStorage.didProcessEditingNotification,
+                object: storage)
+        }
+
+        @objc private func processed(_ notification: Notification) {
+            guard let storage = notification.object as? NSTextStorage,
+                  storage.editedMask.contains(.editedAttributes) else { return }
+            longest = max(longest, storage.editedRange.length)
+        }
+    }
+
+    @Test func typingAboveThePreviewLimitDoesNotResetTheWholeDocument() throws {
+        let source = String(repeating: "Plain line of text.\n", count: 300_000)
+        #expect(source.utf8.count > OpenDocument.livePreviewSizeLimit)
+        let (document, url) = try makeDocument(source)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(document.sourceMode)
+        let host = NativeEditorHost()
+        host.onDirtyChange = { _, dirty in document.isDirty = dirty }
+        host.load(document, rootURL: nil, anchor: nil)
+        #expect(host.preview.tree == nil)
+
+        let storage = try #require(host.textView.textStorage)
+        let recorder = AttributeEditRecorder(storage)
+        host.textView.insertText("x", replacementRange: NSRange(location: 0, length: 0))
+        host.textView.insertText("y", replacementRange: NSRange(location: storage.length, length: 0))
+
+        #expect(document.isDirty)
+        #expect(host.textView.string.hasPrefix("xPlain") && host.textView.string.hasSuffix("y"))
+        #expect(host.preview.tree == nil)
+        #expect(recorder.longest < 1_000,
+            "A keystroke re-attributed \(recorder.longest) of \(storage.length) UTF-16 units.")
+    }
+
     @Test func pastedAndDroppedPlainTextUseTheFileLineSeparator() throws {
         let (document, url) = try makeDocument("ab")
         defer { try? FileManager.default.removeItem(at: url) }
