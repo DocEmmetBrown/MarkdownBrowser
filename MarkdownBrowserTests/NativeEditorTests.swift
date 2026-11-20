@@ -39,7 +39,12 @@ import Testing
     }
 
     private func postClick(in window: NSWindow, at point: NSPoint, modifiers: NSEvent.ModifierFlags = [],
-        count: Int = 1, draggingTo end: NSPoint? = nil) throws {
+        count: Int = 1, draggingTo end: NSPoint? = nil, targeting view: NSView? = nil) throws {
+        if let view {
+            let target = window.contentView?.hitTest(point)
+            #expect(target?.isDescendant(of: view) == true,
+                "Target \(String(describing: target)), frame \(view.frame), point \(point)")
+        }
         let types: [NSEvent.EventType] = end == nil
             ? [.leftMouseDown, .leftMouseUp] : [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
         var events: [NSEvent] = []
@@ -882,7 +887,7 @@ import Testing
         var view = try await rendered()
         let bold = (source as NSString).range(of: "**repeat**")
         var position = (view.string as NSString).range(of: "repeat").location + 2
-        try postClick(in: window, at: clickPoint(in: view, at: position))
+        try postClick(in: window, at: clickPoint(in: view, at: position), targeting: view)
         try await waitUntil { host.textView.selectedRange() == NSRange(location: bold.location + 4, length: 0) }
         #expect(window.firstResponder === host.textView)
         host.textView.moveRightAndModifySelection(nil)
@@ -890,13 +895,13 @@ import Testing
 
         view = try await rendered()
         position = (view.string as NSString).range(of: "repeat").location + 2
-        try postClick(in: window, at: clickPoint(in: view, at: position), count: 2)
+        try postClick(in: window, at: clickPoint(in: view, at: position), count: 2, targeting: view)
         try await waitUntil { host.textView.selectedRange() == NSRange(location: bold.location + 2, length: 6) }
 
         view = try await rendered()
         position = (view.string as NSString).range(of: "repeat", options: .backwards).location + 3
         let code = (source as NSString).range(of: "`repeat`")
-        try postClick(in: window, at: clickPoint(in: view, at: position), modifiers: .shift)
+        try postClick(in: window, at: clickPoint(in: view, at: position), modifiers: .shift, targeting: view)
         try await waitUntil { host.textView.selectedRange() == NSRange(location: 2, length: code.location + 4 - 2) }
         #expect(host.textView.string == source)
         #expect(!(host.textView.undoManager?.canUndo ?? false))
@@ -904,7 +909,7 @@ import Testing
         view = try await rendered()
         position = (view.string as NSString).range(of: "repeat").location + 2
         let point = try clickPoint(in: view, at: position)
-        try postClick(in: window, at: point, draggingTo: NSPoint(x: point.x + 120, y: point.y))
+        try postClick(in: window, at: point, draggingTo: NSPoint(x: point.x + 120, y: point.y), targeting: view)
         try await waitUntil { host.textView.selectedRange().length > 0 }
         #expect(host.textView.selectedRange().location == bold.location + 4)
         #expect(host.textView.string == source)
@@ -937,7 +942,7 @@ import Testing
         let view = try #require(inlineView(in: host.textView, containing: "Target word"))
         let position = (view.string as NSString).range(of: "wrapping text").location + 4
         let point = try clickPoint(in: view, at: position)
-        try postClick(in: window, at: point)
+        try postClick(in: window, at: point, targeting: view)
         let expected = (source as NSString).range(of: "wrapping text").location + 4
         func caretY() -> CGFloat {
             let rect = host.textView.firstRect(forCharacterRange: NSRange(location: expected, length: 0), actualRange: nil)
@@ -974,7 +979,7 @@ import Testing
             }
             let view = try #require(inlineView(in: host.textView, containing: renderedText))
             let position = (view.string as NSString).range(of: "value").location + 2
-            try postClick(in: window, at: clickPoint(in: view, at: position))
+            try postClick(in: window, at: clickPoint(in: view, at: position), targeting: view)
             let expected = NSRange(location: (source as NSString).range(of: rawText).location + 2, length: 0)
             try await waitUntil { host.textView.selectedRange() == expected }
         }
@@ -1015,7 +1020,7 @@ import Testing
             host.scrollView.layoutSubtreeIfNeeded()
             let view = try #require(inlineView(in: host.textView, containing: renderedText))
             let position = (view.string as NSString).range(of: word).location + 2
-            try postClick(in: window, at: clickPoint(in: view, at: position))
+            try postClick(in: window, at: clickPoint(in: view, at: position), targeting: view)
             try await Task.sleep(for: .milliseconds(150))
             #expect(host.textView.selectedRange() == NSRange(location: raw.range(of: word).location + 2, length: 0))
             #expect(host.preview.notice == nil)
