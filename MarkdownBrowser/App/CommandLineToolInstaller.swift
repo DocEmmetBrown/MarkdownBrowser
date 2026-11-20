@@ -9,8 +9,27 @@ enum CommandLineToolInstaller {
         case occupied
     }
 
+    /// The launcher inside the app bundle, at the app's real location rather than a Gatekeeper translocation mount.
     static var bundledTool: URL? {
-        Bundle.main.sharedSupportURL?.appendingPathComponent("bin/\(toolName)")
+        tool(inBundleAt: originalBundleURL(Bundle.main.bundleURL))
+    }
+
+    nonisolated static func tool(inBundleAt bundle: URL) -> URL {
+        bundle.appendingPathComponent("Contents/SharedSupport/bin/\(toolName)")
+    }
+
+    nonisolated static func isTranslocated(_ url: URL) -> Bool {
+        url.path.contains("/AppTranslocation/")
+    }
+
+    /// An app launched from a quarantined spot (Downloads, a disk image) runs from a random read-only mount that
+    /// disappears on relaunch, so a link into it would break. Ask the system for the real location.
+    private static func originalBundleURL(_ url: URL) -> URL {
+        guard isTranslocated(url) else { return url }
+        typealias Resolve = @convention(c) (CFURL, UnsafeMutablePointer<Bool>?, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> Unmanaged<CFURL>?
+        guard let handle = dlopen(nil, RTLD_NOW), let symbol = dlsym(handle, "SecTranslocateCreateOriginalPathForURL") else { return url }
+        let resolve = unsafeBitCast(symbol, to: Resolve.self)
+        return resolve(url as CFURL, nil, nil)?.takeRetainedValue() as URL? ?? url
     }
 
     /// Asks once, on the first launch, whether to install the command.
@@ -33,6 +52,12 @@ enum CommandLineToolInstaller {
             showAlert("The mdb command is missing from this copy of MarkdownBrowser.", detail: "Reinstall the app and try again.")
             return
         }
+        guard !isTranslocated(tool) else {
+            showAlert(
+                "Move MarkdownBrowser to your Applications folder first.",
+                detail: "macOS is running it from a temporary location. Move it to Applications, reopen it, then install the mdb command.")
+            return
+        }
 
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -41,9 +66,7 @@ enum CommandLineToolInstaller {
         panel.canCreateDirectories = true
         panel.prompt = "Install Here"
         panel.message = "Choose a folder on your PATH for the mdb command, such as /usr/local/bin, /opt/homebrew/bin or ~/.local/bin."
-        panel.directoryURL = ["/usr/local/bin", "/opt/homebrew/bin"]
-            .map { URL(fileURLWithPath: $0, isDirectory: true) }
-            .first { FileManager.default.fileExists(atPath: $0.path) }
+        panel.directoryURL = suggestedDirectory()
         guard panel.runModal() == .OK, let directory = panel.url else { return }
 
         let link = directory.appendingPathComponent(toolName)
@@ -59,6 +82,14 @@ enum CommandLineToolInstaller {
             Logger(subsystem: "MarkdownBrowser", category: "CLI").error("Install failed: \(error.localizedDescription, privacy: .public)")
             showManualInstall(directory: directory, tool: tool, error: error)
         }
+    }
+
+    /// Starts the folder picker where a link can be created without sudo: a writable PATH folder first, else any existing one.
+    private static func suggestedDirectory() -> URL? {
+        let home = getpwuid(getuid()).map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
+        let urls = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let fileManager = FileManager.default
+        return urls.first { fileManager.isWritableFile(atPath: $0.path) } ?? urls.first { fileManager.fileExists(atPath: $0.path) }
     }
 
     /// Replaces an earlier link to any copy of the app's launcher without asking; anything else needs `replacingExisting`.

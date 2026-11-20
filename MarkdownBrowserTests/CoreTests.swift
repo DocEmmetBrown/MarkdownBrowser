@@ -106,6 +106,15 @@ import Testing
         #expect(CommandLineToolInstaller.isLauncherLink(link))
     }
 
+    @Test func detectsTranslocatedBundles() {
+        let translocated = URL(filePath: "/private/var/folders/4v/x/T/AppTranslocation/6A37/d/MarkdownBrowser.app")
+        #expect(CommandLineToolInstaller.isTranslocated(translocated))
+        #expect(!CommandLineToolInstaller.isTranslocated(URL(filePath: "/Applications/MarkdownBrowser.app")))
+        #expect(
+            CommandLineToolInstaller.tool(inBundleAt: URL(filePath: "/Applications/MarkdownBrowser.app")).path
+                == "/Applications/MarkdownBrowser.app/Contents/SharedSupport/bin/mdb")
+    }
+
     @Test func quotesManualCommand() {
         let command = CommandLineToolInstaller.manualCommand(
             directory: URL(filePath: "/usr/local/bin"), tool: URL(filePath: "/Applications/It's.app/Contents/SharedSupport/bin/mdb"))
