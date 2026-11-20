@@ -1,5 +1,6 @@
 import AppKit
 import MdbCore
+import os
 
 nonisolated struct NativeMarkdown: Sendable {
     let nodes: [MarkdownNode]
@@ -44,11 +45,12 @@ nonisolated struct NativeRenderedSourceMap: Sendable {
     let text: String
     let offsets: [Int]
 
-    static func make(index: Int, nodes: [MarkdownNode], children: [[Int]], source: NSString) -> Self {
+    static func make(index: Int, nodes: [MarkdownNode], children: [[Int]], source: NSString) -> Self? {
         let node = nodes[index]
         switch node.kind {
         case .text, .code:
             var range = node.range
+            guard contains(range, in: source) else { return nil }
             if node.kind == .code {
                 let raw = source.substring(with: range)
                 let fence = raw.prefix { $0 == "`" }.utf16.count
@@ -62,6 +64,7 @@ nonisolated struct NativeRenderedSourceMap: Sendable {
             return Self(text: "\n", offsets: [node.range.location, NSMaxRange(node.range)])
         case .codeBlock:
             var range = node.range
+            guard contains(range, in: source) else { return nil }
             let first = source.lineRange(for: NSRange(location: range.location, length: 0))
             let opening = source.substring(with: NSIntersectionRange(first, range)).trimmingCharacters(in: .whitespaces)
             if opening.hasPrefix("```") || opening.hasPrefix("~~~") {
@@ -82,10 +85,11 @@ nonisolated struct NativeRenderedSourceMap: Sendable {
         case .html:
             return Self(text: "", offsets: [node.range.location])
         default:
+            guard contains(node.range, in: source) else { return nil }
             var text = ""
             var offsets = [node.range.location]
             for child in children[index] {
-                let part = make(index: child, nodes: nodes, children: children, source: source)
+                guard let part = make(index: child, nodes: nodes, children: children, source: source) else { return nil }
                 guard !part.text.isEmpty else { continue }
                 text += part.text
                 offsets.removeLast()
@@ -101,10 +105,17 @@ nonisolated struct NativeRenderedSourceMap: Sendable {
         return Self(text: text, offsets: offsets)
     }
 
-    static func aligned(_ text: String, range: NSRange, source: NSString) -> Self {
-        guard range.location >= 0, NSMaxRange(range) <= source.length else {
-            preconditionFailure("Parser source range is outside the document")
+    private static func contains(_ range: NSRange, in source: NSString) -> Bool {
+        guard range.location >= 0, range.length >= 0, NSMaxRange(range) <= source.length else {
+            Logger(subsystem: "MarkdownBrowser", category: "NativePreview")
+                .error("Parser source range \(range.location),\(range.length) is outside the document")
+            return false
         }
+        return true
+    }
+
+    static func aligned(_ text: String, range: NSRange, source: NSString) -> Self? {
+        guard contains(range, in: source) else { return nil }
         let raw = source.substring(with: range)
         if raw == text, raw.utf16.count == text.utf16.count {
             return Self(text: text, offsets: Array(range.location...NSMaxRange(range)))

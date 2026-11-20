@@ -791,6 +791,26 @@ import Testing
         #expect(codeMap.offsets[position] == (unclosed as NSString).range(of: "not-a-fence").location + 4)
     }
 
+    @Test func outOfRangeParserNodesFallBackToBlockEditing() throws {
+        let source = "plain `code` text\n"
+        let parsed = NativeMarkdown(source)
+        let paragraph = try #require(parsed.nodes.firstIndex { $0.kind == .paragraph })
+        let children = parsed.children[paragraph]
+        let text = try #require(children.first { parsed.nodes[$0].kind == .text })
+        let code = try #require(children.first { parsed.nodes[$0].kind == .code })
+        let sourceText = source as NSString
+        for target in [text, code] {
+            var broken = parsed.nodes
+            broken[target].length = UInt32(source.utf16.count + 10)
+            #expect(NativeRenderedSourceMap.make(
+                index: paragraph, nodes: broken, children: parsed.children, source: sourceText) == nil)
+            let tree = NativeRenderTree(source, structure: broken)
+            let rendered = try #require(tree.nodes.firstIndex { $0.tag == "p" })
+            #expect(tree.sourceMaps[rendered] == nil)
+        }
+        #expect(NativeRenderedSourceMap.aligned("x", range: NSRange(location: 3, length: 100), source: sourceText) == nil)
+    }
+
     @Test func renderedClicksUseExactSourceOffsetsAndNativeSelection() async throws {
         let source = "# Active\r\n\r\n😀 before **repeat** then [repeat](guide.md) and `repeat`.\r\n\r\nlast\r\n"
         let (document, url) = try makeDocument(source)
