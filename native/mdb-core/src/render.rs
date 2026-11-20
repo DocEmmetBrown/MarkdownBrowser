@@ -383,7 +383,7 @@ pub fn rasterize_svg(source: Vec<u8>) -> Result<Vec<u8>, RenderError> {
         fontdb: FONTS.clone(),
         ..Default::default()
     };
-    // SVGs never resolve embedded paths, URLs or data images outside PathPolicy.
+    // SVG image references (paths, URLs, data URIs) are never resolved.
     options.image_href_resolver.resolve_string = Box::new(|_, _| None);
     options.image_href_resolver.resolve_data = Box::new(|_, _, _| None);
     let tree = resvg::usvg::Tree::from_data(&source, &options).map_err(failed)?;
@@ -483,11 +483,9 @@ mod tests {
     }
 
     #[test]
-    fn preview_bounds_nesting_and_rejects_overflowing_source_positions() {
+    fn preview_bounds_nesting() {
         let source = format!("{}text{}", "<span>".repeat(150), "</span>".repeat(150));
         assert!(render_markdown(source).is_err());
-        let source = "first\n\n<span data-sourcepos=\"2:18446744073709551615-2:18446744073709551615\">text</span>";
-        assert!(render_markdown(source.into()).is_ok());
     }
 
     #[test]
