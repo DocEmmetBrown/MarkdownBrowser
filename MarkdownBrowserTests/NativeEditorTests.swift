@@ -414,6 +414,21 @@ import Testing
         #expect(throws: (any Error).self) { try NativeMath.image("\\notARealCommand{x}", display: false, dark: false) }
     }
 
+    @Test func rawHTMLOrderedListStartCannotOverflowItemNumbers() throws {
+        let source = "<ol start=\"9223372036854775807\"><li>a</li><li>b</li></ol>\n"
+        let (document, url) = try makeDocument(source)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let host = NativeEditorHost()
+        host.load(document, rootURL: nil, anchor: nil)
+        let tree = try #require(host.preview.tree)
+        let list = try #require(tree.nodes.indices.first { tree.nodes[$0].tag == "ol" })
+        let view = NSHostingView(rootView: NativePreviewBlock(tree: tree, index: list, model: host.preview))
+        view.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+        // Laying out the list evaluates each item's number; before the clamp this trapped on integer overflow.
+        view.layoutSubtreeIfNeeded()
+        #expect(view.subviews.isEmpty == false)
+    }
+
     @Test func tenThousandLineTypingKeepsTheSourceAndReportsLatency() throws {
         let source = String(repeating: "A paragraph with **bold** and [link](guide.md).\n", count: 10_000)
         let (document, url) = try makeDocument(source)
