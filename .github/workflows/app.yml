@@ -22,6 +22,9 @@ jobs:
       - run: brew install xcodegen
       # Builds the native core (native/build.sh) with rustup's toolchain.
       - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native
       - run: xcodegen generate
       - run: |
           if ! xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -derivedDataPath build \
@@ -39,6 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets --features mdb-core/bindgen -- -D warnings
       # Includes the replay of goldens/search.json.
