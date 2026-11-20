@@ -17,6 +17,18 @@ private final class AccessDenier: WorkspaceDelegate {
     func workspace(_ workspace: Workspace, showFromSidebar url: URL, hit: SearchHit?, pin: Bool) async {}
 }
 
+/// Grants access, but the tab is closed while the prompt is up.
+@MainActor
+private final class ClosingGranter: WorkspaceDelegate {
+    func workspace(_ workspace: Workspace, shouldLeave document: OpenDocument) async -> Bool { true }
+    func workspace(_ workspace: Workspace, requestAccessTo url: URL) async -> URL? {
+        workspace.close()
+        return url
+    }
+    func workspace(_ workspace: Workspace, openInNewTab url: URL, anchor: String?) {}
+    func workspace(_ workspace: Workspace, showFromSidebar url: URL, hit: SearchHit?, pin: Bool) async {}
+}
+
 @Suite(.serialized) struct FolderNavigationTests {
     private func makeFolder() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -84,6 +96,26 @@ private final class AccessDenier: WorkspaceDelegate {
         await workspace.goUp()
         #expect(delegate.requested == [root.normalizedFileURL])
         #expect(workspace.rootURL == docs)
+    }
+
+    @Test func closingTheTabDuringTheAccessPromptLeavesTheSharedTreeAlone() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let docs = root.appending(path: "docs").normalizedFileURL
+
+        let other = Workspace(url: docs)
+        defer { other.close() }
+        let workspace = Workspace(url: docs)
+        defer { workspace.close() }
+        let delegate = ClosingGranter()
+        workspace.delegate = delegate
+
+        #expect(await workspace.setRoot(root) == false)
+        #expect(workspace.rootURL == docs)
+        // Still shared with `other`: released once, by close().
+        let tree = FileTree.acquire(docs)
+        defer { tree.release() }
+        #expect(tree === other.tree)
     }
 
     @Test func singleFilesHaveNoEnclosingFolder() async throws {

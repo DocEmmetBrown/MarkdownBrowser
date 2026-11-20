@@ -2,11 +2,11 @@ import CoreServices
 import Foundation
 
 /// Recursive folder watcher built on FSEvents; reports changed paths on the main queue.
-final class FolderWatcher {
+nonisolated final class FolderWatcher {
     private var stream: FSEventStreamRef?
-    fileprivate let onChange: ([String]) -> Void
+    fileprivate let onChange: @MainActor ([String]) -> Void
 
-    init(url: URL, onChange: @escaping ([String]) -> Void) {
+    init(url: URL, onChange: @escaping @MainActor ([String]) -> Void) {
         self.onChange = onChange
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil,
@@ -21,6 +21,10 @@ final class FolderWatcher {
         FSEventStreamSetDispatchQueue(stream, .main)
         FSEventStreamStart(stream)
         self.stream = stream
+    }
+
+    deinit {
+        stop()
     }
 
     func stop() {
@@ -42,9 +46,9 @@ private nonisolated func folderWatcherCallback(
 ) {
     guard let info else { return }
     let changed = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
-    let watcher = Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue()
+    let onChange = Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue().onChange
     // The stream is scheduled on the main queue.
     MainActor.assumeIsolated {
-        watcher.onChange(changed)
+        onChange(changed)
     }
 }
