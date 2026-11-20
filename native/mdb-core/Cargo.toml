@@ -19,7 +19,7 @@ bindgen = ["uniffi/cli"]
 comrak = { version = "1.0", default-features = false, features = ["shortcodes"] }
 ammonia = "4.2"
 scraper = "0.29"
-syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
+syntect = { version = "5.3", default-features = false, features = ["parsing", "default-themes", "regex-fancy"] }
 mermaid-rs-renderer = { version = "0.3", default-features = false }
 resvg = "0.50"
 thiserror = "2"
