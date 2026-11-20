@@ -55,6 +55,8 @@ open build/Build/Products/Debug/MarkdownBrowser.app
 
 The first build resolves SwiftMath through Swift Package Manager and builds the Rust core (`native/`) with Cargo. Later builds reuse unchanged dependencies and native build outputs.
 
+CI tests and release builds use GitHub's ARM64 `xcode-27` runner image (macOS 27, currently in preview).
+
 Debug builds are signed ad hoc. Set your development team in `project.yml` before distributing.
 
 ## Command-line tool
