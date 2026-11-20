@@ -19,6 +19,13 @@ import Testing
         return view.subviews.lazy.compactMap { inlineView(in: $0, containing: text, index: index) }.first
     }
 
+    private func show(_ window: NSWindow) {
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKey()
+        window.displayIfNeeded()
+    }
+
     private func clickPoint(in view: NSTextView, at index: Int) throws -> NSPoint {
         let layout = try #require(view.layoutManager)
         let container = try #require(view.textContainer)
@@ -743,9 +750,8 @@ import Testing
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host.scrollView
+        show(window)
         window.makeFirstResponder(host.textView)
-        window.makeKeyAndOrderFront(nil)
-        window.displayIfNeeded()
         defer { window.orderOut(nil) }
         host.scrollView.layoutSubtreeIfNeeded()
         host.livePreview.updateViewport()
@@ -766,6 +772,7 @@ import Testing
         func renderedView(_ tag: String) throws -> NSView { try #require(blockView(tag)) }
         try await waitUntil {
             host.scrollView.layoutSubtreeIfNeeded()
+            host.livePreview.updateViewport()
             return ["details", "ul", "p"].allSatisfy { blockView($0) != nil }
         }
         let disclosure = try renderedView("details")
@@ -857,8 +864,7 @@ import Testing
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host.scrollView
-        window.makeKeyAndOrderFront(nil)
-        window.displayIfNeeded()
+        show(window)
         defer { window.orderOut(nil) }
 
         func rendered() async throws -> NativeInlineTextView {
@@ -867,6 +873,7 @@ import Testing
             host.livePreview.updateViewport()
             try await waitUntil {
                 host.scrollView.layoutSubtreeIfNeeded()
+                host.livePreview.updateViewport()
                 return inlineView(in: host.textView, containing: "😀 before") != nil
             }
             return try #require(inlineView(in: host.textView, containing: "😀 before"))
@@ -915,8 +922,7 @@ import Testing
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 350),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host.scrollView
-        window.makeKeyAndOrderFront(nil)
-        window.displayIfNeeded()
+        show(window)
         defer { window.orderOut(nil) }
         host.livePreview.reveal((source as NSString).range(of: "- item 0"))
         host.scrollView.layoutSubtreeIfNeeded()
@@ -925,6 +931,7 @@ import Testing
         host.livePreview.updateViewport()
         try await waitUntil {
             host.scrollView.layoutSubtreeIfNeeded()
+            host.livePreview.updateViewport()
             return inlineView(in: host.textView, containing: "Target word") != nil
         }
         let view = try #require(inlineView(in: host.textView, containing: "Target word"))
@@ -954,8 +961,7 @@ import Testing
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host.scrollView
-        window.makeKeyAndOrderFront(nil)
-        window.displayIfNeeded()
+        show(window)
         defer { window.orderOut(nil) }
         for (renderedText, rawText) in [("let value", "value = 42"), ("same value", "value**")] {
             host.textView.setSelectedRange(NSRange(location: 2, length: 0))
@@ -963,6 +969,7 @@ import Testing
             host.livePreview.updateViewport()
             try await waitUntil {
                 host.scrollView.layoutSubtreeIfNeeded()
+                host.livePreview.updateViewport()
                 return inlineView(in: host.textView, containing: renderedText) != nil
             }
             let view = try #require(inlineView(in: host.textView, containing: renderedText))
