@@ -626,6 +626,21 @@ import Testing
         #expect(blocks.contains { parsed.rendered.nodes[$0.renderIndex].tag == "ul" })
     }
 
+    @Test(arguments: ["<!-- -->\n\n", "</div\n\n", "<x-block><div>\n\n"])
+    func liveBlockPlanningStaysLinearInHTMLBlocks(block: String) {
+        func planningTime(_ count: Int) -> Duration {
+            let source = String(repeating: block, count: count) + ">\n"
+            let parsed = NativeMarkdown(source)
+            return (0..<3).map { _ in
+                ContinuousClock().measure { _ = NativeLiveBlock.blocks(source: source, markdown: parsed) }
+            }.min()!
+        }
+        let baseline = planningTime(1_000)
+        let large = planningTime(16_000)
+        // Linear planning takes about 16 times the baseline; rescanning the rest of the document per block takes 256.
+        #expect(large < baseline * 64, "1,000 blocks: \(baseline), 16,000 blocks: \(large)")
+    }
+
     @Test func oneEditingPaneHostsRenderedBlocksAndResizesWithoutChangingText() async throws {
         let source = "# Title\n\nA **rendered** paragraph with $x^2$.\n\n| A | B |\n| - | - |\n| x | y |\n\nlast\n"
         let (document, url) = try makeDocument(source)
