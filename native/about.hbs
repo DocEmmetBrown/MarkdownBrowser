@@ -1,0 +1,27 @@
+Rust crates compiled into MarkdownBrowser
+
+MarkdownBrowser statically links the Rust library native/mdb-core, which is
+built from the crates listed below (including compile-time macro crates). Each
+crate's copyright notice and license text follow.
+
+Source code for MPL-2.0 licensed crates
+
+The following crates are licensed under the Mozilla Public License 2.0. They are
+used unmodified. Their source code is available from crates.io and from the
+repositories listed here:
+{{#each crates}}{{#if (eq license "MPL-2.0")}}
+- {{{package.name}}} {{{package.version}}}: https://crates.io/crates/{{{package.name}}}/{{{package.version}}}{{#if package.repository}} ({{{package.repository}}}){{/if}}{{/if}}{{/each}}
+
+Crates
+
+{{#each crates}}- {{{package.name}}} {{{package.version}}} ({{{license}}}){{#if package.repository}}: {{{package.repository}}}{{/if}}
+{{/each}}
+{{#each licenses}}
+================================================================================
+{{{name}}}
+
+Used by:
+{{#each used_by}}- {{{crate.name}}} {{{crate.version}}}
+{{/each}}
+{{{text}}}
+{{/each}}

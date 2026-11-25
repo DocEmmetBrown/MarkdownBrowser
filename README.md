@@ -128,3 +128,5 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 ## License
 
 [MIT](LICENSE) © 2026 Guillaume Winter
+
+The app includes third-party code under MIT, Apache-2.0, BSD, ISC, Zlib, Unicode and MPL-2.0 licenses. Their notices are bundled in `MarkdownBrowser.app/Contents/Resources` (see [Resources](MarkdownBrowser/Resources)).
