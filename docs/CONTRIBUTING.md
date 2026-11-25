@@ -112,10 +112,12 @@ Images/diagrams and the Edit Markdown Source context/accessibility actions targe
 
 ## Releasing
 
-Push a version tag to run tests, build and attach the zip and SHA-256:
+Push a version tag to run tests, build and attach the disk image, the zip and their SHA-256 files:
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-Locally run `scripts/build-release.sh 0.2.0` (`SKIP_TESTS=1` skips tests). Builds are ad-hoc signed unless `DEVELOPER_ID_APPLICATION` is set. Notarization also needs `NOTARY_PROFILE` or the three `NOTARY_KEY_*`/issuer settings documented in that script.
+Locally run `scripts/build-release.sh 0.2.0` (`SKIP_TESTS=1` skips tests). Builds are ad-hoc signed unless `DEVELOPER_ID_APPLICATION` is set. Notarization also needs `NOTARY_PROFILE` or the three `NOTARY_KEY_*`/issuer settings documented in that script; both the app and the disk image are notarized and stapled.
+
+`scripts/make-dmg.sh` builds the disk image: the app, an `Applications` symlink and the arrow background from `scripts/make-dmg-background.swift`. It scripts Finder to save the window layout, so it needs a logged-in session and, the first time, permission for your terminal to control Finder.

@@ -31,6 +31,6 @@ jobs:
       - run: |
           flags=(--generate-notes --verify-tag)
           [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip dist/*.sha256 "${flags[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
