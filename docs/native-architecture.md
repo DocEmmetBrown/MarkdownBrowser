@@ -53,6 +53,9 @@ Their transitive dependencies are locked in [Cargo.lock](../native/Cargo.lock).
 Grammar definitions, themes, fonts and the search corpus are data, not scripting
 engines. [Syntax-Notices.txt](../MarkdownBrowser/Resources/Syntax-Notices.txt)
 contains the redistribution notices for the extended grammar assets.
+[Rust-Notices.txt](../MarkdownBrowser/Resources/Rust-Notices.txt) and
+[SwiftMath-Notices.txt](../MarkdownBrowser/Resources/SwiftMath-Notices.txt) contain
+the notices for the statically linked Rust crates and SwiftMath.
 
 ## Data flow and document ownership
 

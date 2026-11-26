@@ -73,6 +73,14 @@ When updating `two-face`, regenerate the bundled [syntax notices](../MarkdownBro
 cargo run --locked --manifest-path native/Cargo.toml --example syntax_notices -- /path/to/two-face/LICENSE-MIT > MarkdownBrowser/Resources/Syntax-Notices.txt
 ```
 
+**Third-party notices.** The Rust crates and SwiftMath are statically linked into the app, so the app bundles their copyright notices and license texts. MPL-2.0 crates (UniFFI, cssparser, selectors, dtoa-short) also list where to get their source. After any `Cargo.lock` change, regenerate the [Rust notices](../MarkdownBrowser/Resources/Rust-Notices.txt) with [cargo-about](https://github.com/EmbarkStudios/cargo-about) (`brew install cargo-about`), configured by [about.toml](../native/about.toml) and [about.hbs](../native/about.hbs):
+
+```sh
+cargo about generate --frozen --fail --manifest-path native/mdb-core/Cargo.toml native/about.hbs -o MarkdownBrowser/Resources/Rust-Notices.txt
+```
+
+A new dependency license must be added to `accepted` in `about.toml` after review. When updating SwiftMath, update the version, revision and license text in the [SwiftMath notices](../MarkdownBrowser/Resources/SwiftMath-Notices.txt).
+
 ## Common changes
 
 - **Setting**: add a key/default in `AppSettings`, expose it in `SettingsView`, and apply it to existing editors.

@@ -1,0 +1,18 @@
+# cargo-about configuration for MarkdownBrowser/Resources/Rust-Notices.txt; see docs/CONTRIBUTING.md.
+targets = ["aarch64-apple-darwin"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+private = { ignore = true }
+# Ordered by preference for dual-licensed crates.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
