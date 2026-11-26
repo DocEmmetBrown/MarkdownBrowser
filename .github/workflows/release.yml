@@ -3,6 +3,9 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Run on a tag ref (gh workflow run release.yml --ref v1.2.3). dependabot-release.yml uses this
+  # because tags pushed with GITHUB_TOKEN don't trigger the push event.
+  workflow_dispatch:
 
 permissions:
   contents: write

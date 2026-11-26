@@ -1,0 +1,114 @@
+name: dependabot release
+
+# Merges a Dependabot pull request once the app workflow (Rust and Swift tests) passes on its head commit,
+# then tags the next patch version on the merge commit and runs the release workflow for that tag.
+on:
+  workflow_run:
+    workflows: [app]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  release:
+    name: merge and release
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Merge pull request
+        id: merge
+        run: |
+          # A skipped Swift test job still lets the run succeed, so require it explicitly.
+          test=$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.name == "test") | .conclusion')
+          if [[ "$test" != success ]]; then
+            echo "::error::Swift tests did not pass for $HEAD_SHA (test job: ${test:-missing})"
+            exit 1
+          fi
+
+          pr=$(gh api "repos/$GH_REPO/commits/$HEAD_SHA/pulls" --jq '.[]
+            | select(.state == "open" and .user.login == "dependabot[bot]" and .head.sha == env.HEAD_SHA and .base.ref == "main")
+            | .number' | head -1)
+          if [[ -z "$pr" ]]; then
+            echo "No open Dependabot pull request into main has head $HEAD_SHA; nothing to merge."
+            exit 0
+          fi
+
+          # The main ruleset requires CodeQL results, which may finish after the tests.
+          deadline=$((SECONDS + 1800))
+          while :; do
+            runs=$(gh api "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" --paginate \
+              --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv')
+            if grep -q $'^CodeQL\t' <<< "$runs" && ! grep -qv $'\tcompleted\t' <<< "$runs"; then
+              break
+            fi
+            if (( SECONDS > deadline )); then
+              echo "::error::Timed out waiting for checks on $HEAD_SHA"
+              printf '%s\n' "$runs"
+              exit 1
+            fi
+            sleep 60
+          done
+          if failed=$(grep -Ev $'\t(success|skipped|neutral)$' <<< "$runs"); then
+            echo "::error::Checks did not pass on $HEAD_SHA"
+            printf '%s\n' "$failed"
+            exit 1
+          fi
+
+          # Fails if the branch moved since the tested commit; that new commit gets its own run.
+          gh pr merge "$pr" --merge --match-head-commit "$HEAD_SHA"
+          merge_sha=$(gh pr view "$pr" --json mergeCommit --jq .mergeCommit.oid)
+          gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$HEAD_BRANCH" || true
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "sha=$merge_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Tag next patch version
+        id: tag
+        if: steps.merge.outputs.sha
+        env:
+          PR: ${{ steps.merge.outputs.pr }}
+          SHA: ${{ steps.merge.outputs.sha }}
+        run: |
+          # Retries when a concurrent run claims the same version first.
+          for attempt in 1 2 3 4 5; do
+            latest=$(gh api "repos/$GH_REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref' |
+              sed -n 's|^refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$|\1|p' | sort -V | tail -1)
+            if [[ -z "$latest" ]]; then
+              echo "::error::No vMAJOR.MINOR.PATCH tag to bump"
+              exit 1
+            fi
+            IFS=. read -r major minor patch <<< "$latest"
+            tag="v$major.$minor.$((patch + 1))"
+
+            object=$(gh api "repos/$GH_REPO/git/tags" -f tag="$tag" -f object="$SHA" -f type=commit \
+              -f message="$tag: Dependabot update (#$PR)" --jq .sha)
+            if gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$object" > /dev/null; then
+              echo "Tagged $tag at $SHA"
+              echo "tag=$tag" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not create a patch tag for $SHA"
+          exit 1
+
+      - name: Run release workflow
+        if: steps.tag.outputs.tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: gh workflow run release.yml --ref "$TAG"

@@ -1,17 +1,23 @@
 version: 2
 updates:
+  # Passing updates are merged and released automatically (see workflows/dependabot-release.yml),
+  # so every update waits for its release to age before it is proposed.
   - package-ecosystem: cargo
     directory: /native
     schedule:
       interval: daily
     cooldown:
-      default-days: 2
+      default-days: 3
+    # Include indirect dependencies in Cargo.lock, not only those named in Cargo.toml.
+    allow:
+      - dependency-type: all
     open-pull-requests-limit: 10
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: daily
-    # Don't pick up a freshly-published action version the moment it lands.
     cooldown:
-      default-days: 2
+      default-days: 3
+    allow:
+      - dependency-type: all

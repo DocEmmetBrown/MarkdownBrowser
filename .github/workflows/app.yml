@@ -9,9 +9,10 @@ on:
 jobs:
   # Manual only while the repo is private (macOS runner minutes); the Swift tests run locally before pushing.
   # Remove the `if` to run them on every push and pull request again once the repo is public.
+  # Dependabot pull requests always run them: dependabot-release.yml merges only after this job passes.
   test:
     name: test
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
