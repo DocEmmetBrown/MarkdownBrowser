@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds a Release MarkdownBrowser.app and zips it into dist/.
+# Builds a Release MarkdownBrowser.app and packages it into dist/ as a zip and a drag-to-install disk image.
 # Signs with DEVELOPER_ID_APPLICATION and notarizes with NOTARY_PROFILE (or NOTARY_KEY_PATH,
 # NOTARY_KEY_ID, NOTARY_ISSUER) when set; otherwise the app keeps its ad-hoc signature.
 set -euo pipefail
@@ -19,6 +19,7 @@ DERIVED=build/release
 APP="$DERIVED/Build/Products/Release/MarkdownBrowser.app"
 DIST=dist
 ZIP="MarkdownBrowser-$VERSION.zip"
+DMG="MarkdownBrowser-$VERSION.dmg"
 
 xcodegen generate --quiet
 if [[ "${SKIP_TESTS:-0}" != 1 ]]; then
@@ -43,12 +44,12 @@ xcodebuild -project MarkdownBrowser.xcodeproj -scheme MarkdownBrowser -configura
 rm -rf "$DIST"
 mkdir -p "$DIST"
 
+notary=()
 if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
   codesign --force --options runtime --timestamp \
     --entitlements MarkdownBrowser/MarkdownBrowser.entitlements \
     --sign "$DEVELOPER_ID_APPLICATION" "$APP"
 
-  notary=()
   if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     notary=(--keychain-profile "$NOTARY_PROFILE")
   elif [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
@@ -64,5 +65,16 @@ fi
 codesign --verify --strict "$APP"
 
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/$ZIP"
-(cd "$DIST" && shasum -a 256 "$ZIP" > "$ZIP.sha256")
-echo "Built $DIST/$ZIP (version $MARKETING_VERSION, build $BUILD_NUMBER)"
+
+scripts/make-dmg.sh "$APP" "$DIST/$DMG" MarkdownBrowser
+if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
+  codesign --force --timestamp --sign "$DEVELOPER_ID_APPLICATION" "$DIST/$DMG"
+  if (( ${#notary[@]} )); then
+    xcrun notarytool submit "$DIST/$DMG" "${notary[@]}" --wait
+    xcrun stapler staple "$DIST/$DMG"
+  fi
+fi
+hdiutil verify -quiet "$DIST/$DMG"
+
+(cd "$DIST" && shasum -a 256 "$ZIP" > "$ZIP.sha256" && shasum -a 256 "$DMG" > "$DMG.sha256")
+echo "Built $DIST/$ZIP and $DIST/$DMG (version $MARKETING_VERSION, build $BUILD_NUMBER)"

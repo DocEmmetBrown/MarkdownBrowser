@@ -21,7 +21,7 @@ A native macOS app for browsing and editing Markdown, built with Swift and Rust.
 
 ## Installing
 
-Download the zip from the [latest release](https://github.com/DocEmmetBrown/MarkdownBrowser/releases/latest), unzip it and move **MarkdownBrowser.app** to `/Applications`.
+Download the `.dmg` from the [latest release](https://github.com/DocEmmetBrown/MarkdownBrowser/releases/latest), open it and drag **MarkdownBrowser** onto the **Applications** folder. A zip of the app is attached too.
 
 Release builds aren't signed with a Developer ID yet, so macOS blocks the first launch. Right-click the app and choose **Open**, or run:
 
